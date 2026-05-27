@@ -1,0 +1,125 @@
+<div class="dashboard-container">
+  <!-- ENCABEZADO DASHBOARD -->
+  <div class="dashboard-header">
+    <h1>Panel de Control</h1>
+    <span class="dash-fecha" id="dash-fecha"></span>
+  </div>
+
+  <!-- CARDS RESUMEN (KPIs) -->
+  <div class="dash-kpis">
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background: var(--vd); color: white;">
+        <i class="ti ti-receipt-2"></i>
+      </div>
+      <div class="kpi-content">
+        <div class="kpi-label">Ventas hoy</div>
+        <div class="kpi-value" id="kpi-ventas-hoy">$0</div>
+        <div class="kpi-meta" id="kpi-ventas-qty">0 ventas</div>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background: var(--az); color: white;">
+        <i class="ti ti-wallet"></i>
+      </div>
+      <div class="kpi-content">
+        <div class="kpi-label">Saldo en caja</div>
+        <div class="kpi-value" id="kpi-caja">$0</div>
+        <div class="kpi-meta">Caja principal</div>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background: var(--am); color: white;">
+        <i class="ti ti-alert-circle"></i>
+      </div>
+      <div class="kpi-content">
+        <div class="kpi-label">Deudas pendientes</div>
+        <div class="kpi-value" id="kpi-deudas">$0</div>
+        <div class="kpi-meta" id="kpi-deudas-qty">0 clientes</div>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon" style="background: var(--ng); color: white;">
+        <i class="ti ti-package"></i>
+      </div>
+      <div class="kpi-content">
+        <div class="kpi-label">Productos</div>
+        <div class="kpi-value" id="kpi-productos">0</div>
+        <div class="kpi-meta">En inventario</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACCIONES RÁPIDAS -->
+  <div class="dash-section">
+    <h3 class="dash-section-title">Acciones rápidas</h3>
+    <div class="dash-quick-actions">
+      <button class="quick-action-btn" onclick="abrirVenta()">
+        <i class="ti ti-shopping-cart"></i>
+        <span>Nueva venta</span>
+      </button>
+      <button class="quick-action-btn" onclick="openOv('ov-ingreso-merch')">
+        <i class="ti ti-package-import"></i>
+        <span>Ingreso merch.</span>
+      </button>
+      <button class="quick-action-btn" onclick="openOv('ov-nuevo-cliente')">
+        <i class="ti ti-user-plus"></i>
+        <span>Nuevo cliente</span>
+      </button>
+      <button class="quick-action-btn" onclick="openOv('ov-nuevo-prod')">
+        <i class="ti ti-shirt"></i>
+        <span>Nuevo producto</span>
+      </button>
+      <button class="quick-action-btn" onclick="openOv('ov-gasto')">
+        <i class="ti ti-receipt"></i>
+        <span>Registrar gasto</span>
+      </button>
+      <button class="quick-action-btn" onclick="openOv('ov-cierre')">
+        <i class="ti ti-lock"></i>
+        <span>Cierre del día</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ÚLTIMAS VENTAS -->
+  <div class="dash-section">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+      <h3 class="dash-section-title" style="margin: 0;">Últimas ventas</h3>
+      <a href="#" style="font-size: 12px; color: var(--az); text-decoration: none;" onclick="irAVentas(); return false;">Ver todas →</a>
+    </div>
+    <div id="dash-ventas-list" class="dash-ventas-list">
+      <div style="text-align: center; color: var(--gt); padding: 30px 20px; font-size: 13px;">
+        <i class="ti ti-inbox" style="display: block; font-size: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
+        Sin ventas registradas
+      </div>
+    </div>
+  </div>
+
+  <!-- CLIENTES CON DEUDA -->
+  <div class="dash-section">
+    <h3 class="dash-section-title">Clientes con saldo pendiente</h3>
+    <div id="dash-deudores-list" class="dash-deudores-list">
+      <div style="text-align: center; color: var(--gt); padding: 20px; font-size: 13px;">
+        <i class="ti ti-check-circle" style="display: block; font-size: 24px; margin-bottom: 8px; color: var(--vd);"></i>
+        Todos los clientes al día
+      </div>
+    </div>
+  </div>
+
+  <!-- RECORDATORIOS / ALERTAS -->
+  <div class="dash-section">
+    <h3 class="dash-section-title">Recordatorios</h3>
+    <div class="dash-alerts">
+      <div class="dash-alert alert-info">
+        <i class="ti ti-info-circle"></i>
+        <span>Recuerda hacer el cierre de caja al final del día</span>
+      </div>
+      <div class="dash-alert alert-warning" id="dash-stock-bajo" style="display: none;">
+        <i class="ti ti-alert-triangle"></i>
+        <span>Tienes productos con stock bajo</span>
+      </div>
+    </div>
+  </div>
+</div>
