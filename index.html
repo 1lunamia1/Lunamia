@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Luna Mia — Sistema de Gestión</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+<div class="topbar">
+  <div class="brand">
+    <i class="ti ti-moon"></i>Luna Mia
+    <span class="brand-sub">· gestión</span>
+  </div>
+</div>
+
+<div class="body-wrap">
+<div class="leftnav" id="leftnav"></div>
+<div class="main" id="main-area"></div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODALES GLOBALES
+════════════════════════════════════════ -->
+
+<!-- VARIANTE PDV -->
+<div class="ov" id="ov-var">
+<div class="modal" style="max-width:380px;">
+  <div class="mh"><span class="mt" id="ov-var-titulo">Elegir variante</span><button class="btn-ghost" onclick="closeOv('ov-var')"><i class="ti ti-x"></i></button></div>
+  <div class="mc" id="ov-var-content"></div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-var')">Cancelar</button></div>
+</div>
+</div>
+
+<!-- CONFIRMAR VENTA — PAGOS DIVIDIDOS -->
+<div class="ov" id="ov-cobrar">
+<div class="modal" style="max-width:460px;">
+  <div class="mh"><span class="mt">Confirmar cobro</span><button class="btn-ghost" onclick="closeOv('ov-cobrar')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div id="cobrar-notif"></div>
+
+    <!-- Descuento -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <div style="flex:1;"><label>Descuento general (%)</label>
+        <input type="number" id="cobrar-desc" value="0" min="0" max="100" oninput="recalcCobrar()"/></div>
+      <div style="flex:1;"></div>
+    </div>
+
+    <!-- Resumen total -->
+    <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:13px 15px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div>
+        <div style="font-size:11px;color:var(--gc);">Total a cobrar</div>
+        <div style="font-size:22px;font-weight:500;" id="cobrar-total">$0</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:var(--gc);" id="cobrar-items">0 productos</div>
+        <div style="font-size:11px;color:var(--gc);" id="cobrar-cliente-label">Consumidor final</div>
+      </div>
+    </div>
+
+    <!-- ── PAGOS DIVIDIDOS ── -->
+    <div class="sect-title">Métodos de pago</div>
+    <div id="cobrar-pagos-list" style="display:flex;flex-direction:column;gap:7px;margin-bottom:10px;"></div>
+    <button class="btn-ghost" style="width:100%;justify-content:center;margin-bottom:12px;" onclick="agregarMetodoPago()">
+      <i class="ti ti-plus"></i> Agregar método de pago
+    </button>
+
+    <!-- ── RESUMEN PAGADO / RESTANTE ── -->
+    <div id="cobrar-resumen-pagos" style="display:none;background:var(--crd);border-radius:8px;padding:10px 13px;margin-bottom:10px;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="color:var(--gt);">Total pagado</span>
+        <span style="font-weight:500;color:var(--vd);" id="cobrar-suma-pagos">$0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:var(--gt);">Restante</span>
+        <span style="font-weight:500;" id="cobrar-restante-val">$0</span>
+      </div>
+    </div>
+
+    <!-- ── OPCIÓN: ENVIAR RESTO A CTA CTE ── -->
+    <div id="cobrar-cta-cte-wrap" style="display:none;background:var(--ambg);border:0.5px solid var(--ambr);border-radius:8px;padding:10px 13px;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:0;">
+        <input type="checkbox" id="cobrar-cta-cte-toggle" onchange="recalcCobrar()" style="width:15px;height:15px;accent-color:var(--am);"/>
+        <span style="font-size:12px;color:var(--am);font-weight:500;">
+          Enviar resto a cuenta corriente
+          <span style="font-weight:400;color:var(--am);opacity:.8;" id="cobrar-cta-cte-monto"></span>
+        </span>
+      </label>
+      <div style="font-size:10px;color:var(--am);opacity:.7;margin-top:4px;padding-left:24px;">Se registrará como deuda del cliente</div>
+    </div>
+
+    <!-- Diferencia -->
+    <div id="cobrar-diferencia" style="border-radius:8px;padding:10px 13px;font-size:12px;font-weight:500;text-align:center;display:none;"></div>
+
+    <div class="fg" style="margin-top:10px;"><label>Observaciones</label><input type="text" placeholder="Opcional..." id="cobrar-obs"/></div>
+  </div>
+  <div class="mf">
+    <button class="btn btn-out" onclick="closeOv('ov-cobrar')">Cancelar</button>
+    <button class="btn btn-ng" id="cobrar-btn-confirmar" onclick="procesarVenta()"><i class="ti ti-check"></i>Confirmar y cobrar</button>
+  </div>
+</div>
+</div>
+
+<!-- DEVOLUCIÓN -->
+<div class="ov" id="ov-dev">
+<div class="modal" style="max-width:440px;">
+  <div class="mh"><span class="mt"><i class="ti ti-arrow-back-up" style="margin-right:6px;"></i>Registrar devolución</span><button class="btn-ghost" onclick="closeOv('ov-dev')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="notif notif-az"><i class="ti ti-info-circle"></i>Genera saldo a favor · no devolución de dinero</div>
+    <div class="fg2">
+      <div class="fg"><label>Cliente</label><select id="dev-cliente"><option value="">Consumidor final</option></select></div>
+      <div class="fg"><label>Venta original #</label><input type="text" id="dev-venta" placeholder="Nro. de venta"/></div>
+    </div>
+    <div class="fg"><label>Producto devuelto</label><select id="dev-prod"></select></div>
+    <div class="fg2">
+      <div class="fg"><label>Motivo</label><select id="dev-motivo"><option>Talla incorrecta</option><option>Defecto de fábrica</option><option>No gustó</option><option>Otro</option></select></div>
+      <div class="fg"><label>Saldo a favor ($)</label><input type="number" id="dev-monto" placeholder="$"/></div>
+    </div>
+    <div style="background:var(--crd);border-radius:8px;padding:10px 12px;font-size:12px;">
+      <div style="font-weight:500;margin-bottom:5px;">Condiciones de devolución</div>
+      <div style="color:var(--gt);display:flex;flex-direction:column;gap:3px;">
+        <span><i class="ti ti-check" style="color:var(--vd);margin-right:4px;"></i>Misma prenda que la vendida</span>
+        <span><i class="ti ti-check" style="color:var(--vd);margin-right:4px;"></i>Etiqueta presente</span>
+        <span><i class="ti ti-check" style="color:var(--vd);margin-right:4px;"></i>Buen estado general</span>
+      </div>
+    </div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-dev')">Cancelar</button><button class="btn btn-ng" onclick="procesarDevolucion()"><i class="ti ti-check"></i>Confirmar devolución</button></div>
+</div>
+</div>
+
+<!-- NUEVO PRODUCTO -->
+<div class="ov" id="ov-nuevo-prod">
+<div class="modal" style="max-width:580px;">
+  <div class="mh"><span class="mt"><i class="ti ti-shirt" style="margin-right:7px;"></i>Nuevo producto</span><button class="btn-ghost" onclick="closeOv('ov-nuevo-prod')"><i class="ti ti-x"></i></button></div>
+  <div class="mtabs">
+    <div class="mtab on" id="ptab-0" onclick="switchPTab(0)">1 · Datos</div>
+    <div class="mtab" id="ptab-1" onclick="switchPTab(1)">2 · Precio</div>
+    <div class="mtab" id="ptab-2" onclick="switchPTab(2)">3 · Variantes</div>
+  </div>
+  <div class="mc">
+    <div class="mtp on" id="ptp-0">
+      <div class="fg2">
+        <div class="fg"><label>Nombre del producto</label><input type="text" id="np-nombre" placeholder="Ej: Jean Baggy Tokio" oninput="actualizarCodigoPrev()"/></div>
+        <div class="fg"><label>Categoría</label><select id="np-cat" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="PAN">Pantalones</option><option value="BUZ">Buzos</option><option value="CAM">Camperas</option><option value="REM">Remeras</option></select></div>
+      </div>
+      <div class="fg2">
+        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option></select></div>
+        <div class="fg"><label>Proveedor</label><select id="np-prov"><option value="">Sin proveedor</option></select></div>
+      </div>
+      <div style="background:var(--azbg);border-radius:8px;padding:10px 12px;border:0.5px solid var(--azbr);">
+        <div style="font-size:11px;color:var(--az);margin-bottom:3px;font-weight:500;">Código generado automáticamente</div>
+        <div style="font-size:15px;font-weight:500;font-family:monospace;" id="np-codigo-prev">—</div>
+      </div>
+    </div>
+    <div class="mtp" id="ptp-1">
+      <div class="fg2">
+        <div class="fg"><label>Costo de compra</label><input type="number" id="np-costo" placeholder="0" oninput="calcPrecioNuevo()"/></div>
+        <div class="fg"><label>Ganancia (%)</label><input type="number" id="np-gan" value="110" oninput="calcPrecioNuevo()"/></div>
+      </div>
+      <div class="precio-calc">
+        <div><div class="pc-label">Precio final sugerido</div><div class="pc-value" id="np-precio-final">$—</div></div>
+        <div style="text-align:right;"><div class="pc-label">Ganancia estimada</div><div style="font-size:14px;color:var(--gc);" id="np-gan-est">$—</div></div>
+      </div>
+      <div class="fg"><label>Precio final (editable)</label><input type="number" id="np-precio-edit" placeholder="Se completa automático"/></div>
+      <div class="hint">Redondeo psicológico aplicado (ej: 42.000 → 41.990)</div>
+    </div>
+    <div class="mtp" id="ptp-2">
+      <div class="fg" style="margin-bottom:10px;"><div class="sect-title">Colores</div><div class="tag-strip" id="np-colores"></div></div>
+      <div class="fg"><div class="sect-title">Talles</div><div class="tag-strip" id="np-talles"></div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 7px;">
+        <div style="font-size:11px;font-weight:500;color:var(--gt);text-transform:uppercase;letter-spacing:.04em;">Variantes</div>
+        <button class="btn-ghost btn-sm" onclick="generarVariantesProd()"><i class="ti ti-refresh"></i>Generar</button>
+      </div>
+      <div id="np-var-list"></div>
+      <button class="btn btn-out btn-sm" onclick="agregarVarManual()"><i class="ti ti-plus"></i>Agregar manual</button>
+    </div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-nuevo-prod')">Cancelar</button><button class="btn btn-ng" onclick="guardarProducto()"><i class="ti ti-check"></i>Guardar producto</button></div>
+</div>
+</div>
+
+<!-- INGRESO MERCADERÍA -->
+<div class="ov" id="ov-ingreso-merch">
+<div class="modal" style="max-width:580px;">
+  <div class="mh"><span class="mt"><i class="ti ti-package-import" style="margin-right:7px;"></i>Registrar ingreso de mercadería</span><button class="btn-ghost" onclick="closeOv('ov-ingreso-merch')"><i class="ti ti-x"></i></button></div>
+  <div class="mtabs">
+    <div class="mtab on" id="itab-0" onclick="switchIngTab(0)">1 · Proveedor</div>
+    <div class="mtab" id="itab-1" onclick="switchIngTab(1)">2 · Productos</div>
+    <div class="mtab" id="itab-2" onclick="switchIngTab(2)">3 · Pago</div>
+  </div>
+  <div class="mc">
+    <div class="mtp on" id="itp-0">
+      <div class="fg2">
+        <div class="fg"><label>Proveedor</label><select id="ing-prov" onchange="onIngProvChange()"><option value="">Seleccionar...</option></select></div>
+        <div class="fg"><label>Fecha</label><input type="date" id="ing-fecha"/></div>
+      </div>
+      <div class="fg"><label>Número de remito (opcional)</label><input type="text" id="ing-remito" placeholder="Ej: R-00123"/></div>
+      <div class="fg"><label>Observaciones</label><textarea id="ing-obs" rows="2" placeholder="Notas sobre la entrega..."></textarea></div>
+    </div>
+    <div class="mtp" id="itp-1">
+      <div class="notif notif-az" style="margin-bottom:10px;"><i class="ti ti-info-circle" style="flex-shrink:0;"></i>Stock y costos se actualizan al confirmar.</div>
+      <div class="ing-var-head"><span>Variante</span><span>Stock</span><span>Cantidad</span><span>Costo unit.</span><span></span></div>
+      <div id="ing-var-rows"></div>
+      <button class="btn btn-out btn-sm" onclick="addIngVarRow()" style="margin-top:6px;"><i class="ti ti-plus"></i>Agregar producto</button>
+    </div>
+    <div class="mtp" id="itp-2">
+      <div style="background:var(--crd);border-radius:9px;padding:12px 14px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span style="color:var(--gt);">Unidades a ingresar</span><span style="font-weight:500;" id="ing-uds-prev">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--gt);">Costo total estimado</span><span style="font-weight:500;" id="ing-costo-prev">$0</span></div>
+      </div>
+      <div class="fg2">
+        <div class="fg"><label>Total factura</label><input type="number" id="ing-total-factura" placeholder="$0"/></div>
+        <div class="fg"><label>Método de pago</label><select id="ing-metodo"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia / MP</option><option value="cuenta_prov">Cuenta cte. proveedor</option></select></div>
+      </div>
+      <div class="fg"><label>Caja afectada</label><select id="ing-caja"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
+      <div class="notif notif-am" id="ing-aviso-cc" style="display:none;"><i class="ti ti-alert-triangle" style="flex-shrink:0;"></i>Cuenta corriente proveedor: no se descuenta de caja ahora.</div>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btn btn-out" onclick="closeOv('ov-ingreso-merch')">Cancelar</button>
+    <button class="btn btn-out btn-sm" id="ing-prev-btn" style="display:none;" onclick="switchIngTab(ingTabActual-1)"><i class="ti ti-arrow-left"></i>Anterior</button>
+    <button class="btn btn-ng" id="ing-next-btn" onclick="ingTabSiguiente()"><i class="ti ti-arrow-right"></i>Siguiente</button>
+  </div>
+</div>
+</div>
+
+<!-- NUEVO CLIENTE -->
+<div class="ov" id="ov-nuevo-cliente">
+<div class="modal" style="max-width:480px;">
+  <div class="mh"><span class="mt"><i class="ti ti-user-plus" style="margin-right:7px;"></i>Nuevo cliente</span><button class="btn-ghost" onclick="closeOv('ov-nuevo-cliente')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="fg2">
+      <div class="fg"><label>Nombre</label><input type="text" id="nc-nombre" placeholder="Nombre"/></div>
+      <div class="fg"><label>Apellido</label><input type="text" id="nc-apellido" placeholder="Apellido"/></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Teléfono</label><input type="tel" id="nc-tel" placeholder="261 400 0000"/></div>
+      <div class="fg"><label>Dirección (opcional)</label><input type="text" id="nc-dir" placeholder="Calle y número"/></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Límite de crédito</label><input type="number" id="nc-limite" value="50000"/></div>
+      <div class="fg"><label>Días plazo de pago</label><input type="number" id="nc-dias" value="30"/></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="nc-obs" rows="2" placeholder="Notas internas..."></textarea></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-nuevo-cliente')">Cancelar</button><button class="btn btn-ng" onclick="guardarCliente()"><i class="ti ti-check"></i>Guardar cliente</button></div>
+</div>
+</div>
+
+<!-- PAGO CLIENTE -->
+<div class="ov" id="ov-pago-cliente">
+<div class="modal" style="max-width:380px;">
+  <div class="mh"><span class="mt"><i class="ti ti-currency-dollar" style="margin-right:7px;"></i>Registrar pago</span><button class="btn-ghost" onclick="closeOv('ov-pago-cliente')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="fg"><label>Cliente</label><select id="pago-cli" onchange="onPagoCliChange()"><option value="">Seleccionar...</option></select></div>
+    <div id="pago-cli-info" style="display:none;background:var(--crd);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--gt);">Deuda</span><span style="font-weight:500;" id="pago-cli-deuda">$0</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--gt);">Saldo a favor</span><span style="font-weight:500;color:var(--vd);" id="pago-cli-favor">$0</span></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Monto del pago</label><input type="number" id="pago-cli-monto" placeholder="$0" oninput="recalcPagoCli()"/></div>
+      <div class="fg"><label>Método</label><select id="pago-cli-metodo"><option>Efectivo</option><option>Transferencia</option><option>Débito</option></select></div>
+    </div>
+    <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;">
+      <div><div style="font-size:10px;color:var(--gc);">Deuda restante</div><div style="font-size:18px;font-weight:500;" id="pago-cli-resto">$—</div></div>
+      <div style="font-size:12px;color:var(--gc);" id="pago-cli-tipo">—</div>
+    </div>
+    <div class="fg" style="margin-top:12px;"><label>Observaciones</label><input type="text" placeholder="Nro. de recibo..."/></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-pago-cliente')">Cancelar</button><button class="btn btn-ng" onclick="procesarPagoCli()"><i class="ti ti-check"></i>Confirmar pago</button></div>
+</div>
+</div>
+
+<!-- GASTO CAJA -->
+<div class="ov" id="ov-gasto">
+<div class="modal" style="max-width:420px;">
+  <div class="mh"><span class="mt"><i class="ti ti-receipt" style="margin-right:7px;"></i>Registrar gasto</span><button class="btn-ghost" onclick="closeOv('ov-gasto')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="fg2">
+      <div class="fg"><label>Categoría</label><select id="g-cat"><option>Bolsas y packaging</option><option>Perchas e insumos</option><option>Limpieza</option><option>Viáticos / transporte</option><option>Publicidad</option><option>Servicios</option><option>Compra a proveedor</option><option>Retiro de dueño</option><option>Otro</option></select></div>
+      <div class="fg"><label>Monto</label><input type="number" id="g-monto" placeholder="$0"/></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Caja afectada</label><select id="g-caja"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
+      <div class="fg"><label>Medio de pago</label><select id="g-medio"><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="transferencia">Transferencia</option></select></div>
+    </div>
+    <div class="fg"><label>Descripción</label><input type="text" id="g-desc" placeholder="Opcional..."/></div>
+    <div class="fg"><label>Fecha</label><input type="date" id="g-fecha"/></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-gasto')">Cancelar</button><button class="btn btn-ng" onclick="guardarGasto()"><i class="ti ti-check"></i>Guardar</button></div>
+</div>
+</div>
+
+<!-- TRANSFERENCIA CAJAS -->
+<div class="ov" id="ov-transf-cajas">
+<div class="modal" style="max-width:360px;">
+  <div class="mh"><span class="mt"><i class="ti ti-arrows-exchange" style="margin-right:7px;"></i>Transferir entre cajas</span><button class="btn-ghost" onclick="closeOv('ov-transf-cajas')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="fg2">
+      <div class="fg"><label>Origen</label><select id="tr-origen"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
+      <div class="fg"><label>Destino</label><select id="tr-destino"><option value="reinversion">Caja reinversión</option><option value="principal">Caja principal</option></select></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Monto</label><input type="number" id="tr-monto" placeholder="$0" oninput="recalcTransf()"/></div>
+      <div class="fg"><label>Fecha</label><input type="date" id="tr-fecha"/></div>
+    </div>
+    <div id="tr-info" style="display:none;background:var(--crd);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--gt);margin-bottom:12px;"></div>
+    <div class="fg"><label>Motivo</label><input type="text" id="tr-motivo" placeholder="Ej: Reserva para mercadería..."/></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-transf-cajas')">Cancelar</button><button class="btn btn-ng" onclick="guardarTransferencia()"><i class="ti ti-check"></i>Confirmar</button></div>
+</div>
+</div>
+
+<!-- CIERRE CONFIRMACIÓN -->
+<div class="ov" id="ov-cierre">
+<div class="modal" style="max-width:380px;">
+  <div class="mh"><span class="mt"><i class="ti ti-lock" style="margin-right:7px;"></i>Arqueo y cierre del día</span><button class="btn-ghost" onclick="closeOv('ov-cierre')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="fg"><label>Efectivo contado físicamente</label><input type="number" id="cierre-ef-real" placeholder="$0" oninput="recalcCierre()"/></div>
+    <div class="fg"><label>Saldo en Mercado Pago</label><input type="number" id="cierre-mp-real" placeholder="$0" oninput="recalcCierre()"/></div>
+    <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:12px 14px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span style="color:var(--gc);">Efectivo esperado</span><span id="cierre-ef-esp">$—</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span style="color:var(--gc);">Diferencia efectivo</span><span id="cierre-ef-diff" style="font-weight:500;">—</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span style="color:var(--gc);">MP esperado</span><span id="cierre-mp-esp">$—</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--gc);">Diferencia MP</span><span id="cierre-mp-diff" style="font-weight:500;">—</span></div>
+    </div>
+    <div class="fg" style="margin-top:12px;"><label>Observaciones del cierre</label><textarea id="cierre-obs" rows="2" placeholder="Notas del día..."></textarea></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-cierre')">Cancelar</button><button class="btn btn-ng" onclick="procesarCierre()"><i class="ti ti-check"></i>Cerrar caja</button></div>
+</div>
+</div>
+
+<!-- NUEVO PROVEEDOR -->
+<div class="ov" id="ov-nuevo-prov">
+<div class="modal" style="max-width:480px;">
+  <div class="mh"><span class="mt"><i class="ti ti-truck" style="margin-right:7px;"></i>Nuevo proveedor</span><button class="btn-ghost" onclick="closeOv('ov-nuevo-prov')"><i class="ti ti-x"></i></button></div>
+  <div class="mc">
+    <div class="fg2">
+      <div class="fg"><label>Nombre / empresa</label><input type="text" id="newp-nombre" placeholder="Ej: Textil Norte"/></div>
+      <div class="fg"><label>Rubro</label><select id="newp-rubro"><option>Ropa dama</option><option>Ropa caballero</option><option>Ropa general</option><option>Insumos y packaging</option><option>Otro</option></select></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Teléfono / WhatsApp</label><input type="tel" id="newp-tel" placeholder="261 400 0000"/></div>
+      <div class="fg"><label>Instagram</label><input type="text" id="newp-ig" placeholder="@usuario"/></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label>Dirección</label><input type="text" id="newp-dir" placeholder="Ciudad o dirección"/></div>
+      <div class="fg"><label>Días de entrega</label><input type="text" id="newp-dias" placeholder="Ej: lunes y jueves"/></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="newp-obs" rows="2" placeholder="Condiciones de pago, mínimo..."></textarea></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-nuevo-prov')">Cancelar</button><button class="btn btn-ng" onclick="guardarProveedor()"><i class="ti ti-check"></i>Guardar</button></div>
+</div>
+</div>
+
+<!-- DETALLE INGRESO -->
+<div class="ov" id="ov-det-ing">
+<div class="modal" style="max-width:480px;">
+  <div class="mh"><span class="mt" id="det-ing-titulo">Detalle del ingreso</span><button class="btn-ghost" onclick="closeOv('ov-det-ing')"><i class="ti ti-x"></i></button></div>
+  <div class="mc" id="det-ing-body"></div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-det-ing')">Cerrar</button></div>
+</div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
