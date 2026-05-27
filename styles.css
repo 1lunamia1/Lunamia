@@ -20,6 +20,18 @@ html,body{height:100%;background:var(--cr);font-family:'Helvetica Neue',Helvetic
 .topbar{background:var(--sb-bg);height:48px;display:flex;align-items:center;padding:0 20px;flex-shrink:0;position:sticky;top:0;z-index:50;border-bottom:0.5px solid var(--sb-border);}
 .brand{font-size:15px;font-weight:500;letter-spacing:.05em;display:flex;align-items:center;gap:8px;color:var(--sb-text-on);}
 .brand-sub{font-size:11px;color:var(--sb-text);font-weight:400;}
+.topbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.sync-status{font-size:11px;color:var(--sb-text);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.topbar-btn{background:var(--sb-hover);color:var(--sb-text-on);border:0.5px solid var(--sb-border);border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer;}
+.topbar-btn:hover{background:var(--sb-active);}
+
+/* ── LOGIN ── */
+.auth-screen{min-height:100vh;background:var(--cr);display:flex;align-items:center;justify-content:center;padding:22px;}
+.auth-card{width:100%;max-width:360px;background:var(--bl);border:0.5px solid var(--crb);border-radius:10px;padding:20px 22px;}
+.auth-title{font-size:18px;font-weight:500;margin-bottom:3px;color:var(--ng);}
+.auth-sub{font-size:12px;color:var(--gc);margin-bottom:18px;}
+.auth-error{display:none;background:var(--rjbg);border:0.5px solid var(--rjbr);color:var(--rj);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:12px;}
+.auth-error.on{display:block;}
 
 /* ── RIGHT NAV — ELIMINADO (movido al izquierdo) ── */
 

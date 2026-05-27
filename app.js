@@ -90,6 +90,144 @@ let DB = {
   ],
 };
 
+/* ── SUPABASE / PERSISTENCIA ── */
+const RAW_CONFIG = window.LUNAMIA_CONFIG || {};
+const SUPABASE_URL = (RAW_CONFIG.SUPABASE_URL || "").replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
+const SUPABASE_KEY = RAW_CONFIG.SUPABASE_ANON_KEY || RAW_CONFIG.SUPABASE_PUBLISHABLE_KEY || "";
+const SUPABASE_ON = Boolean(SUPABASE_URL && SUPABASE_KEY);
+let sbClient = null;
+let remoteReady = false;
+let saveTimer = null;
+
+function isValidDB(data){
+  return data && Array.isArray(data.productos) && Array.isArray(data.clientes) && data.cajas;
+}
+
+function setSyncStatus(text){
+  const el=document.getElementById("sync-status");
+  if(el)el.textContent=text;
+}
+
+function showApp(){
+  const app=document.querySelector(".app");
+  const auth=document.getElementById("auth-screen");
+  if(app)app.style.display="flex";
+  if(auth)auth.remove();
+  const out=document.getElementById("logout-btn");
+  if(out)out.style.display=SUPABASE_ON?"inline-flex":"none";
+}
+
+function showLogin(message=""){
+  const app=document.querySelector(".app");
+  if(app)app.style.display="none";
+  let screen=document.getElementById("auth-screen");
+  if(!screen){
+    screen=document.createElement("div");
+    screen.id="auth-screen";
+    screen.className="auth-screen";
+    document.body.prepend(screen);
+  }
+  screen.innerHTML=`
+    <form class="auth-card" onsubmit="loginSupabase(event)">
+      <div class="auth-title">Luna Mia</div>
+      <div class="auth-sub">Ingresá para sincronizar la base de datos.</div>
+      <div class="auth-error${message?" on":""}" id="auth-error">${message}</div>
+      <div class="fg"><label>Email</label><input type="text" id="auth-email" autocomplete="email" required /></div>
+      <div class="fg"><label>Contraseña</label><input type="password" id="auth-pass" autocomplete="current-password" required /></div>
+      <button class="btn btn-ng" id="auth-submit" style="width:100%;justify-content:center;" type="submit">Ingresar</button>
+    </form>`;
+}
+
+async function loginSupabase(ev){
+  ev.preventDefault();
+  const btn=document.getElementById("auth-submit");
+  const err=document.getElementById("auth-error");
+  if(btn){btn.disabled=true;btn.style.opacity=".6";btn.textContent="Ingresando...";}
+  if(err){err.classList.remove("on");err.textContent="";}
+  const email=document.getElementById("auth-email").value.trim();
+  const password=document.getElementById("auth-pass").value;
+  const {error}=await sbClient.auth.signInWithPassword({email,password});
+  if(error){
+    if(err){err.textContent=error.message;err.classList.add("on");}
+    if(btn){btn.disabled=false;btn.style.opacity="1";btn.textContent="Ingresar";}
+    return;
+  }
+  await startAuthenticatedApp();
+}
+
+async function logoutSupabase(){
+  if(sbClient)await sbClient.auth.signOut();
+  remoteReady=false;
+  showLogin();
+  setSyncStatus("Sin sesion");
+}
+
+async function loadRemoteDB(){
+  setSyncStatus("Cargando datos...");
+  const {data,error}=await sbClient.from("app_state").select("data").eq("id","main").single();
+  if(error)throw error;
+  if(isValidDB(data?.data)){
+    DB=data.data;
+  }else{
+    const {error:updateError}=await sbClient.from("app_state").update({data:DB,updated_at:new Date().toISOString()}).eq("id","main");
+    if(updateError)throw updateError;
+  }
+  remoteReady=true;
+  setSyncStatus("Sincronizado");
+}
+
+async function saveRemoteDB(){
+  if(!SUPABASE_ON || !sbClient || !remoteReady)return;
+  setSyncStatus("Guardando...");
+  const {error}=await sbClient.from("app_state").update({data:DB,updated_at:new Date().toISOString()}).eq("id","main");
+  if(error){
+    console.error(error);
+    setSyncStatus("Error al guardar");
+    return;
+  }
+  setSyncStatus("Sincronizado");
+}
+
+function persistDBSoon(){
+  if(!remoteReady)return;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(saveRemoteDB,350);
+}
+
+async function startAuthenticatedApp(){
+  try{
+    await loadRemoteDB();
+    showApp();
+    navMod("ventas");
+  }catch(err){
+    console.error(err);
+    showLogin(`No se pudo cargar la base. Revisá que supabase.sql esté ejecutado. ${err.message||""}`);
+    setSyncStatus("Error Supabase");
+  }
+}
+
+async function initApp(){
+  if(!SUPABASE_ON){
+    setSyncStatus("Local");
+    showApp();
+    navMod("ventas");
+    return;
+  }
+  if(!window.supabase){
+    showLogin("No se pudo cargar el cliente de Supabase.");
+    setSyncStatus("Error Supabase");
+    return;
+  }
+  sbClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  const {data}=await sbClient.auth.getSession();
+  if(!data.session){
+    showLogin();
+    setSyncStatus("Sin sesion");
+    return;
+  }
+  await startAuthenticatedApp();
+}
+
 /* ── HELPERS ── */
 const fmt=n=>"$"+Math.round(n).toLocaleString("es-AR");
 const fmtDiff=n=>n===0?`<span style="color:var(--vd);font-weight:500">Sin diferencia</span>`:n>0?`<span style="color:var(--vd);font-weight:500">Sobrante ${fmt(n)}</span>`:`<span style="color:var(--rj);font-weight:500">Faltante ${fmt(Math.abs(n))}</span>`;
@@ -436,6 +574,7 @@ function guardarProducto(){
   const provIdVal=parseInt(document.getElementById("np-prov").value)||null;
   DB.productos.push({id:nextId(DB.productos),nombre,codigo,cat:catText,gen:genText,costo,gan:parseFloat(document.getElementById("np-gan").value)||110,precio,provId:provIdVal,variantes});
   if(provIdVal){const prov=DB.proveedores.find(p=>p.id===provIdVal);if(prov&&!prov.prodIds.includes(DB.productos.length))prov.prodIds.push(DB.productos.length);}
+  persistDBSoon();
   closeOv("ov-nuevo-prod");
   renderProdLista();
 }
@@ -526,6 +665,7 @@ function confirmarIngreso(){
   const newId=nextId(DB.proveedores.flatMap(p=>p.compras));
   prov.compras.unshift({id:newId,fecha:todayShort(),remito:document.getElementById("ing-remito").value||"",items:items.map(r=>({cod:r.cod,nombre:`${r.prodNombre} · ${r.c}/${r.t}`,cant:r.cantIngreso,costo:r.nuevoCosto})),total,metodo,caja,uds:items.reduce((a,r)=>a+r.cantIngreso,0)});
   DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),hora:hora(),tipo:"gasto",concepto:`Compra a ${prov.nombre}`,caja,medio:metodo==="efectivo"?"efectivo":"transferencia",monto:total,signo:-1});
+  persistDBSoon();
   closeOv("ov-ingreso-merch");
   renderSidebar();
   if(currentSub[currentMod]==="ingresos")renderIngresosPage();
@@ -980,6 +1120,7 @@ function procesarVenta(){
   // ── Limpiar ──
   carritos[carritoIdx].items=[];
   pagosMethods=[{tipo:"efectivo",monto:0}];
+  persistDBSoon();
   closeOv("ov-cobrar");
   renderCarrito(); renderProdGrid(); renderPausados(); renderSidebar();
 }
@@ -1024,6 +1165,7 @@ function procesarDevolucion(){
   if(cl){cl.saldoFavor+=monto;cl.historial.unshift({fecha:todayShort(),concepto:"Devolución — saldo a favor",monto,tipo:"favor",pts:0});}
   const v=DB.productos.flatMap(p=>p.variantes).find(x=>x.cod===cod);if(v)v.stock+=1;
   DB.devoluciones.unshift({id:nextId(DB.devoluciones),fecha:todayShort(),cliente:cl?cl.nombre:"Consumidor final",producto:cod,motivo,monto});
+  persistDBSoon();
   closeOv("ov-dev");renderDevoluciones();
 }
 
@@ -1249,6 +1391,7 @@ function guardarCliente(){
   if(!nom)return;
   const ape=document.getElementById("nc-apellido").value.trim();
   DB.clientes.push({id:nextId(DB.clientes),nombre:`${nom} ${ape}`.trim(),tel:document.getElementById("nc-tel").value||"—",dir:document.getElementById("nc-dir").value||"",obs:document.getElementById("nc-obs").value||"",registro:today(),estado:"ok",deuda:0,limite:parseFloat(document.getElementById("nc-limite").value)||50000,saldoFavor:0,puntos:0,nivel:"Nuevo",comprasTotal:0,vence:"—",diasPlazo:parseInt(document.getElementById("nc-dias").value)||30,historial:[]});
+  persistDBSoon();
   closeOv("ov-nuevo-cliente");renderClientesLista();renderSidebar();
 }
 function abrirPagoCli(id){
@@ -1281,6 +1424,7 @@ function procesarPagoCli(){
   c.historial.unshift({fecha:todayShort(),concepto:`Pago — ${document.getElementById("pago-cli-metodo").value}`,monto:m,tipo:"abono",pts:0});
   DB.cajas.principal.efectivo=(DB.cajas.principal.efectivo||0)+m;
   DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),hora:hora(),tipo:"pago_cliente",concepto:`Cobro cta cte — ${c.nombre}`,caja:"principal",medio:"efectivo",monto:m,signo:1});
+  persistDBSoon();
   closeOv("ov-pago-cliente");
   renderSidebar();
   const sub=currentSub[currentMod];
@@ -1485,6 +1629,7 @@ function guardarGasto(){
   DB.gastos.unshift({id:nextId(DB.gastos),fecha:todayShort(),cat,desc,caja,medio,monto:m});
   DB.cajas[caja][medio]=Math.max(0,(DB.cajas[caja][medio]||0)-m);
   DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),hora:hora(),tipo:"gasto",concepto:cat+(desc?` — ${desc}`:""),caja,medio,monto:m,signo:-1});
+  persistDBSoon();
   closeOv("ov-gasto");renderSidebar();
   const sub=currentSub[currentMod];
   if(sub==="caja-resumen")renderCajaResumen();
@@ -1514,6 +1659,7 @@ function guardarTransferencia(){
   DB.cajas[de].efectivo=(DB.cajas[de].efectivo||0)+m;
   DB.transferencias.unshift({id:nextId(DB.transferencias),fecha:todayShort(),hora:hora(),origen:or,destino:de,motivo:mo,monto:m});
   DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),hora:hora(),tipo:"transferencia",concepto:`Transferencia → ${de==="principal"?"Principal":"Reinversión"}`,caja:or,medio:"—",monto:m,signo:-1});
+  persistDBSoon();
   closeOv("ov-transf-cajas");renderSidebar();
   const sub=currentSub[currentMod];
   if(sub==="caja-resumen")renderCajaResumen();
@@ -1708,6 +1854,7 @@ function abrirNuevoProv(){
 function guardarProveedor(){
   const n=document.getElementById("newp-nombre").value.trim();if(!n)return;
   DB.proveedores.push({id:nextId(DB.proveedores),nombre:n,rubro:document.getElementById("newp-rubro").value,tel:document.getElementById("newp-tel").value,ig:document.getElementById("newp-ig").value,dir:document.getElementById("newp-dir").value,dias:document.getElementById("newp-dias").value,obs:document.getElementById("newp-obs").value,activo:true,prodIds:[],compras:[]});
+  persistDBSoon();
   closeOv("ov-nuevo-prov");renderProvLista();renderSidebar();
 }
 
@@ -1737,4 +1884,4 @@ function verDetalleIngreso(id){
 /* ══════════════════════════════════════════
    ARRANQUE
 ══════════════════════════════════════════ */
-navMod("ventas");
+initApp();

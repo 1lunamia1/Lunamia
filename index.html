@@ -14,6 +14,10 @@
     <i class="ti ti-moon"></i>Luna Mia
     <span class="brand-sub">· gestión</span>
   </div>
+  <div class="topbar-actions">
+    <span class="sync-status" id="sync-status">Local</span>
+    <button class="topbar-btn" id="logout-btn" onclick="logoutSupabase()" style="display:none;">Salir</button>
+  </div>
 </div>
 
 <div class="body-wrap">
@@ -366,6 +370,8 @@
 </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
