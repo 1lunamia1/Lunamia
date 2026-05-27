@@ -13,7 +13,13 @@ Sistema web de gestion para tienda de ropa.
 
 ## Uso local
 
-Abrir `index.html` directamente en el navegador.
+Levantar un servidor estatico desde la carpeta del proyecto:
+
+```bash
+python3 -m http.server 8080
+```
+
+Luego abrir `http://localhost:8080/`.
 
 ## Deploy simple
 

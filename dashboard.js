@@ -32,7 +32,7 @@ async function actualizarDashboard() {
   const dashFecha = document.getElementById('dash-fecha');
   if (dashFecha) dashFecha.textContent = fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1);
   
-  // Obtener datos de la base de datos (ejemplo local)
+  // Obtener datos de la base cargada por la app principal
   const datos = await obtenerDatosResumen();
   
   // Actualizar KPIs
@@ -61,32 +61,33 @@ async function actualizarDashboard() {
   cargarDeudores();
 }
 
-// Obtener datos de resumen (simulado)
+// Obtener datos de resumen desde la base cargada en app.js
 async function obtenerDatosResumen() {
-  // En producción, esto vendría de Supabase
-  // Por ahora retornamos datos de ejemplo
+  const db = typeof DB !== "undefined" ? DB : null;
+  if(!db){
+    return {ventasHoy:0,cantVentas:0,cajaSaldo:0,deudaTotal:0,cantDeudores:0,cantProductos:0};
+  }
+  const fechaHoy = typeof todayShort === "function"
+    ? todayShort()
+    : new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}).replace("/", "/");
+  const ventasHoy = db.ventas.filter(v => v.fecha === fechaHoy);
   return {
-    ventasHoy: 45000,
-    cantVentas: 3,
-    cajaSaldo: 125500,
-    deudaTotal: 38000,
-    cantDeudores: 2,
-    cantProductos: 47
+    ventasHoy: ventasHoy.reduce((a,v)=>a+(v.total||0),0),
+    cantVentas: ventasHoy.length,
+    cajaSaldo: typeof totalCaja === "function" ? totalCaja("principal") : 0,
+    deudaTotal: db.clientes.reduce((a,c)=>a+(c.deuda||0),0),
+    cantDeudores: db.clientes.filter(c=>(c.deuda||0)>0).length,
+    cantProductos: db.productos.length
   };
 }
 
 // Cargar últimas ventas
 function cargarUltimasVentas() {
   const listElement = document.getElementById('dash-ventas-list');
-  
-  // Datos de ejemplo (en producción sería de Supabase)
-  const ventasEjemplo = [
-    { id: 1, cliente: 'Consumidor final', monto: 15000, hora: '14:32' },
-    { id: 2, cliente: 'Rocío García', monto: 18500, hora: '13:15' },
-    { id: 3, cliente: 'Martín López', monto: 11500, hora: '11:47' }
-  ];
-  
-  if (ventasEjemplo.length === 0) {
+  const db = typeof DB !== "undefined" ? DB : null;
+  const ventas = db ? db.ventas.slice(0,5) : [];
+
+  if (ventas.length === 0) {
     listElement.innerHTML = `
       <div style="text-align: center; color: var(--gt); padding: 30px 20px; font-size: 13px;">
         <i class="ti ti-inbox" style="display: block; font-size: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
@@ -97,14 +98,14 @@ function cargarUltimasVentas() {
   }
   
   let html = '';
-  ventasEjemplo.forEach(venta => {
+  ventas.forEach(venta => {
     html += `
       <div class="venta-item">
         <div class="venta-item-info">
           <div class="venta-item-cliente">${venta.cliente}</div>
           <div class="venta-item-meta">Venta #${venta.id} · ${venta.hora}</div>
         </div>
-        <div class="venta-item-monto">${formatearMoney(venta.monto)}</div>
+        <div class="venta-item-monto">${formatearMoney(venta.total)}</div>
       </div>
     `;
   });
@@ -115,14 +116,12 @@ function cargarUltimasVentas() {
 // Cargar clientes con deuda
 function cargarDeudores() {
   const listElement = document.getElementById('dash-deudores-list');
-  
-  // Datos de ejemplo
-  const deudoresEjemplo = [
-    { id: 1, nombre: 'Empresa A SRL', deuda: 25000, dias: 15 },
-    { id: 2, nombre: 'Rocío García', deuda: 13000, dias: 8 }
-  ];
-  
-  if (deudoresEjemplo.length === 0) {
+  const db = typeof DB !== "undefined" ? DB : null;
+  const deudores = db
+    ? db.clientes.filter(c=>(c.deuda||0)>0).sort((a,b)=>(b.deuda||0)-(a.deuda||0)).slice(0,5)
+    : [];
+
+  if (deudores.length === 0) {
     listElement.innerHTML = `
       <div style="text-align: center; color: var(--gt); padding: 20px; font-size: 13px;">
         <i class="ti ti-check-circle" style="display: block; font-size: 24px; margin-bottom: 8px; color: var(--vd);"></i>
@@ -133,16 +132,16 @@ function cargarDeudores() {
   }
   
   let html = '';
-  deudoresEjemplo.forEach(deudor => {
+  deudores.forEach(deudor => {
     html += `
       <div class="deudor-item">
         <div class="deudor-info">
           <div class="deudor-nombre">${deudor.nombre}</div>
-          <div class="deudor-meta">${deudor.dias} días de atraso</div>
+          <div class="deudor-meta">${deudor.estado === "vencida" ? "Vencida" : "Saldo pendiente"}</div>
         </div>
         <div style="display: flex; align-items: center;">
           <div class="deudor-monto">${formatearMoney(deudor.deuda)}</div>
-          <button class="deudor-action" onclick="abrirPagoCli('${deudor.id}')">Registrar pago</button>
+          <button class="deudor-action" onclick="abrirPagoCli(${deudor.id})">Registrar pago</button>
         </div>
       </div>
     `;
@@ -159,22 +158,6 @@ function formatearMoney(monto) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(monto);
-}
-
-// Abrir venta (placeholder)
-function abrirVenta() {
-  alert('Función de nueva venta - próximamente integrada');
-}
-
-// Ir a ventas (placeholder)
-function irAVentas() {
-  alert('Ver todas las ventas - próximamente integrada');
-}
-
-// Abrir pago de cliente (placeholder)
-function abrirPagoCli(clienteId) {
-  alert('Registrar pago para cliente ID: ' + clienteId);
-  // Aquí se abriría el modal de pago del cliente
 }
 
 // Iniciar dashboard cuando el DOM esté listo
