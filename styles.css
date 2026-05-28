@@ -1,24 +1,27 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
-  --cr:#F5F1E8;--crd:#EBE4D5;--crb:#D9D0BC;
-  --ng:#232220;--ngs:#33312D;
-  --gt:#6E6A61;--gc:#9E9A91;
-  --bl:#FDFAF4;
-  --vd:#3A6B10;--vdbg:#EBF4DE;--vdbr:#C2DF9A;
-  --am:#7D4A0A;--ambg:#FBF0DC;--ambr:#F9CA7A;
-  --rj:#9E2B2B;--rjbg:#FDEEED;--rjbr:#F5C3C3;
-  --az:#1659A0;--azbg:#E7F2FC;--azbr:#B8D5F5;
-  --pu:#3A3288;--pubg:#EEEDFE;--pubr:#D0CEFA;
-  --te:#0D6B53;--tebg:#E2F6EF;--tebr:#A2E3CC;
-  --sb-bg:#27241E;--sb-border:rgba(255,255,255,.06);
-  --sb-text:rgba(255,255,255,.45);--sb-text-on:#F5F1E8;
-  --sb-hover:rgba(255,255,255,.07);--sb-active:rgba(255,255,255,.12);
+  --cr:#F4EBDD;--crd:#E8DAC6;--crb:#D5C3AB;
+  --ng:#171411;--ngs:#2A241F;
+  --gt:#74685B;--gc:#A99B8C;
+  --bl:#FFFaf2;
+  --vd:#436A3C;--vdbg:#EEF5EA;--vdbr:#C8DEC0;
+  --am:#9A6A32;--ambg:#F8EDDD;--ambr:#E6C99F;
+  --rj:#9A3E36;--rjbg:#F8EDEA;--rjbr:#E7BFB9;
+  --az:#375C6D;--azbg:#EAF2F4;--azbr:#BFD3DA;
+  --pu:#6D5267;--pubg:#F2EAF0;--pubr:#D8C1D0;
+  --te:#356A5A;--tebg:#E9F3EF;--tebr:#BED8CE;
+  --gold:#B99567;--rose:#B17C78;
+  --bg:var(--bl);--ct:var(--ng);--brd:var(--crb);--brd2:var(--gold);
+  --sb-bg:#171411;--sb-border:rgba(255,255,255,.08);
+  --sb-text:rgba(255,250,242,.54);--sb-text-on:#FFFaf2;
+  --sb-hover:rgba(243,231,210,.08);--sb-active:rgba(185,149,103,.18);
 }
-html,body{height:100%;background:var(--cr);font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:var(--ng);}
+html,body{height:100%;background:var(--cr);font-family:Inter,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;color:var(--ng);}
 
 /* ── TOPBAR (solo brand) ── */
 .topbar{background:var(--sb-bg);height:48px;display:flex;align-items:center;padding:0 20px;flex-shrink:0;position:sticky;top:0;z-index:50;border-bottom:0.5px solid var(--sb-border);}
-.brand{font-size:15px;font-weight:500;letter-spacing:.05em;display:flex;align-items:center;gap:8px;color:var(--sb-text-on);}
+.brand{font-size:15px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;gap:9px;color:var(--sb-text-on);}
+.brand-logo{width:25px;height:25px;border-radius:8px;display:block;}
 .brand-sub{font-size:11px;color:var(--sb-text);font-weight:400;}
 .topbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px;}
 .sync-status{font-size:11px;color:var(--sb-text);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -26,10 +29,11 @@ html,body{height:100%;background:var(--cr);font-family:'Helvetica Neue',Helvetic
 .topbar-btn:hover{background:var(--sb-active);}
 
 /* ── LOGIN ── */
-.auth-screen{min-height:100vh;background:var(--cr);display:flex;align-items:center;justify-content:center;padding:22px;}
-.auth-card{width:100%;max-width:360px;background:var(--bl);border:0.5px solid var(--crb);border-radius:10px;padding:20px 22px;}
-.auth-title{font-size:18px;font-weight:500;margin-bottom:3px;color:var(--ng);}
-.auth-sub{font-size:12px;color:var(--gc);margin-bottom:18px;}
+.auth-screen{min-height:100vh;background:linear-gradient(180deg,#FFFaf2 0%,#F4EBDD 100%);display:flex;align-items:center;justify-content:center;padding:22px;}
+.auth-card{width:100%;max-width:380px;background:rgba(255,250,242,.92);border:0.5px solid var(--crb);border-radius:14px;padding:28px 28px 24px;box-shadow:0 24px 70px rgba(23,20,17,.13);}
+.auth-logo{width:76px;height:76px;margin:0 auto 14px;display:block;border-radius:22px;box-shadow:0 12px 32px rgba(23,20,17,.16);}
+.auth-title{font-size:22px;font-weight:600;margin-bottom:4px;color:var(--ng);text-align:center;letter-spacing:.02em;}
+.auth-sub{font-size:12px;color:var(--gt);margin-bottom:20px;text-align:center;line-height:1.45;}
 .auth-error{display:none;background:var(--rjbg);border:0.5px solid var(--rjbr);color:var(--rj);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:12px;}
 .auth-error.on{display:block;}
 
@@ -142,6 +146,8 @@ label{font-size:11px;font-weight:500;color:var(--gt);display:block;margin-bottom
 .fg2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
 .fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
 .hint{font-size:10px;color:var(--gc);margin-top:3px;}
+.guide-list{display:flex;flex-direction:column;gap:9px;font-size:12px;color:var(--gt);line-height:1.45;}
+.guide-list b{color:var(--ng);font-weight:650;}
 
 /* ── TABLES ── */
 .tw{background:var(--bl);border:0.5px solid var(--crb);border-radius:10px;overflow:hidden;}

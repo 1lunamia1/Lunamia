@@ -31,6 +31,17 @@ async function actualizarDashboard() {
   const fechaFormato = hoy.toLocaleDateString('es-AR', opciones);
   const dashFecha = document.getElementById('dash-fecha');
   if (dashFecha) dashFecha.textContent = fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1);
+  const mensajes = [
+    "Buen día Andrea, hoy es un gran día para crecer.",
+    "Buen día Andrea, cada venta empieza con una buena energía.",
+    "Buen día Andrea, orden y foco para una jornada brillante.",
+    "Buen día Andrea, tu constancia también viste a Luna Mia.",
+    "Buen día Andrea, hoy puede llegar esa clienta ideal.",
+    "Buen día Andrea, que la tienda fluya simple, linda y rentable.",
+    "Buen día Andrea, pequeños detalles hacen grande la experiencia."
+  ];
+  const daily = document.getElementById("daily-message-text");
+  if(daily) daily.textContent = mensajes[hoy.getDay() % mensajes.length];
   
   // Obtener datos de la base cargada por la app principal
   const datos = await obtenerDatosResumen();
@@ -53,12 +64,16 @@ async function actualizarDashboard() {
   if (document.getElementById('kpi-productos')) {
     document.getElementById('kpi-productos').textContent = datos.cantProductos;
   }
+
+  actualizarEstadoDatos();
   
   // Cargar últimas ventas
   cargarUltimasVentas();
   
   // Cargar deudores
   cargarDeudores();
+
+  actualizarAvisoImportacion();
 }
 
 // Obtener datos de resumen desde la base cargada en app.js
@@ -79,6 +94,89 @@ async function obtenerDatosResumen() {
     cantDeudores: db.clientes.filter(c=>(c.deuda||0)>0).length,
     cantProductos: db.productos.length
   };
+}
+
+function conteoDB(db, key){
+  return Array.isArray(db?.[key]) ? db[key].length : 0;
+}
+
+function datosCoincidenConExcel(db){
+  const initial = window.LUNAMIA_INITIAL_DB;
+  const summary = window.LUNAMIA_IMPORT_SUMMARY;
+  if(!db) return false;
+  if(initial){
+    return db.meta?.fuente === initial.meta?.fuente &&
+      conteoDB(db,"clientes") === conteoDB(initial,"clientes") &&
+      conteoDB(db,"productos") === conteoDB(initial,"productos") &&
+      conteoDB(db,"ventas") === conteoDB(initial,"ventas") &&
+      conteoDB(db,"movimientos") === conteoDB(initial,"movimientos");
+  }
+  if(summary){
+    return db.meta?.fuente === summary.fuente &&
+      conteoDB(db,"clientes") === summary.clientes &&
+      conteoDB(db,"productos") === summary.productos &&
+      conteoDB(db,"ventas") === summary.ventas &&
+      conteoDB(db,"movimientos") === summary.movimientos;
+  }
+  return false;
+}
+
+function actualizarEstadoDatos(){
+  const db = typeof DB !== "undefined" ? DB : null;
+  if(!db) return;
+  const initial = window.LUNAMIA_INITIAL_DB;
+  const summary = window.LUNAMIA_IMPORT_SUMMARY;
+  const matchExcel = datosCoincidenConExcel(db);
+  const supabaseOn = typeof SUPABASE_ON !== "undefined" && SUPABASE_ON;
+  const synced = typeof remoteReady !== "undefined" && remoteReady;
+  const source = db.meta?.fuente || "Base existente";
+  const expectedSource = initial?.meta?.fuente || summary?.fuente || "Excel";
+  const badge = document.getElementById("dash-data-badge");
+  const msg = document.getElementById("dash-data-message");
+  const importBtn = document.getElementById("dash-data-import-btn");
+  const cajaNote = document.getElementById("dash-data-caja-note");
+
+  document.getElementById("dash-data-source").textContent = source;
+  document.getElementById("dash-data-clientes").textContent = conteoDB(db,"clientes");
+  document.getElementById("dash-data-productos").textContent = conteoDB(db,"productos");
+  document.getElementById("dash-data-ventas").textContent = conteoDB(db,"ventas");
+  document.getElementById("dash-data-movimientos").textContent = conteoDB(db,"movimientos");
+  document.getElementById("dash-data-sync").textContent = supabaseOn ? (synced ? "Conectado" : "Pendiente") : "Local";
+
+  if(matchExcel && supabaseOn && synced){
+    badge.textContent = "Excel sincronizado";
+    badge.className = "data-badge ok";
+    msg.textContent = `La app está usando los datos importados de ${expectedSource} y la base está conectada a Supabase.`;
+  }else if(matchExcel){
+    badge.textContent = "Excel local";
+    badge.className = "data-badge warn";
+    msg.textContent = `Los datos del Excel están cargados en la app, pero todavía no hay confirmación de sincronización remota.`;
+  }else if(initial){
+    badge.textContent = "Importación pendiente";
+    badge.className = "data-badge warn";
+    msg.textContent = `Supabase tiene una base distinta o incompleta. Podés importar ${expectedSource} para reemplazarla con los datos preparados.`;
+  }else if(summary){
+    badge.textContent = "Revisar Supabase";
+    badge.className = "data-badge warn";
+    msg.textContent = `La base activa no coincide con el resumen importado de ${expectedSource}. El Excel privado no se publica en GitHub Pages; la importación se hace en un entorno privado.`;
+  }else{
+    badge.textContent = "Sin Excel";
+    badge.className = "data-badge warn";
+    msg.textContent = "No se encontró el archivo de importación preparado.";
+  }
+
+  if(importBtn) importBtn.style.display = initial && !matchExcel ? "inline-flex" : "none";
+  if(cajaNote){
+    const efectivo = summary?.cajaEfectivoInicial ?? db.cajas?.principal?.efectivo ?? 0;
+    cajaNote.textContent = efectivo < 0 ? `Revisar caja: el Excel dejó efectivo inicial negativo (${formatearMoney(efectivo)}).` : "";
+  }
+}
+
+function actualizarAvisoImportacion(){
+  const importAlert = document.getElementById("dash-importar-excel");
+  if(importAlert){
+    importAlert.style.display = window.LUNAMIA_INITIAL_DB && !datosCoincidenConExcel(DB) ? "flex" : "none";
+  }
 }
 
 // Cargar últimas ventas
@@ -118,7 +216,7 @@ function cargarDeudores() {
   const listElement = document.getElementById('dash-deudores-list');
   const db = typeof DB !== "undefined" ? DB : null;
   const deudores = db
-    ? db.clientes.filter(c=>(c.deuda||0)>0).sort((a,b)=>(b.deuda||0)-(a.deuda||0)).slice(0,5)
+    ? db.clientes.filter(c=>(c.deuda||0)>0 || c.estado==="proximo").sort((a,b)=>(b.deuda||0)-(a.deuda||0)).slice(0,8)
     : [];
 
   if (deudores.length === 0) {
@@ -137,7 +235,7 @@ function cargarDeudores() {
       <div class="deudor-item">
         <div class="deudor-info">
           <div class="deudor-nombre">${deudor.nombre}</div>
-          <div class="deudor-meta">${deudor.estado === "vencida" ? "Vencida" : "Saldo pendiente"}</div>
+          <div class="deudor-meta">${deudor.estado === "vencida" ? "Vencida" : deudor.estado === "proximo" ? "Por vencer" : "Saldo pendiente"}</div>
         </div>
         <div style="display: flex; align-items: center;">
           <div class="deudor-monto">${formatearMoney(deudor.deuda)}</div>

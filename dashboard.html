@@ -1,8 +1,16 @@
 <div class="dashboard-container">
   <!-- ENCABEZADO DASHBOARD -->
   <div class="dashboard-header">
-    <h1>Panel de Control</h1>
+    <h1>Luna Mia Indumentaria</h1>
     <span class="dash-fecha" id="dash-fecha"></span>
+  </div>
+
+  <div class="daily-message">
+    <div>
+      <span class="daily-eyebrow">Mensaje del día</span>
+      <p id="daily-message-text">Buen día Andrea, hoy es un gran día para crecer.</p>
+    </div>
+    <i class="ti ti-sparkles"></i>
   </div>
 
   <!-- CARDS RESUMEN (KPIs) -->
@@ -52,6 +60,47 @@
     </div>
   </div>
 
+  <!-- ESTADO DE DATOS -->
+  <div class="dash-section dash-data-status" id="dash-data-status">
+    <div class="dash-data-head">
+      <div>
+        <h3 class="dash-section-title" style="margin:0;">Estado de datos</h3>
+        <p id="dash-data-message">Verificando base activa...</p>
+      </div>
+      <span class="data-badge" id="dash-data-badge">Revisando</span>
+    </div>
+    <div class="dash-data-grid">
+      <div>
+        <span>Fuente activa</span>
+        <strong id="dash-data-source">—</strong>
+      </div>
+      <div>
+        <span>Clientes</span>
+        <strong id="dash-data-clientes">—</strong>
+      </div>
+      <div>
+        <span>Productos</span>
+        <strong id="dash-data-productos">—</strong>
+      </div>
+      <div>
+        <span>Ventas</span>
+        <strong id="dash-data-ventas">—</strong>
+      </div>
+      <div>
+        <span>Movimientos</span>
+        <strong id="dash-data-movimientos">—</strong>
+      </div>
+      <div>
+        <span>Supabase</span>
+        <strong id="dash-data-sync">—</strong>
+      </div>
+    </div>
+    <div class="dash-data-actions">
+      <button class="btn btn-ng btn-sm" id="dash-data-import-btn" onclick="importarExcelInicial()" style="display:none;"><i class="ti ti-database-import"></i>Importar Excel a Supabase</button>
+      <span id="dash-data-caja-note"></span>
+    </div>
+  </div>
+
   <!-- ACCIONES RÁPIDAS -->
   <div class="dash-section">
     <h3 class="dash-section-title">Acciones rápidas</h3>
@@ -83,6 +132,17 @@
     </div>
   </div>
 
+  <!-- CLIENTES CON DEUDA -->
+  <div class="dash-section">
+    <h3 class="dash-section-title">Clientes con cuentas corrientes</h3>
+    <div id="dash-deudores-list" class="dash-deudores-list">
+      <div style="text-align: center; color: var(--gt); padding: 20px; font-size: 13px;">
+        <i class="ti ti-check-circle" style="display: block; font-size: 24px; margin-bottom: 8px; color: var(--vd);"></i>
+        Todos los clientes al día
+      </div>
+    </div>
+  </div>
+
   <!-- ÚLTIMAS VENTAS -->
   <div class="dash-section">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -93,17 +153,6 @@
       <div style="text-align: center; color: var(--gt); padding: 30px 20px; font-size: 13px;">
         <i class="ti ti-inbox" style="display: block; font-size: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
         Sin ventas registradas
-      </div>
-    </div>
-  </div>
-
-  <!-- CLIENTES CON DEUDA -->
-  <div class="dash-section">
-    <h3 class="dash-section-title">Clientes con saldo pendiente</h3>
-    <div id="dash-deudores-list" class="dash-deudores-list">
-      <div style="text-align: center; color: var(--gt); padding: 20px; font-size: 13px;">
-        <i class="ti ti-check-circle" style="display: block; font-size: 24px; margin-bottom: 8px; color: var(--vd);"></i>
-        Todos los clientes al día
       </div>
     </div>
   </div>
@@ -119,6 +168,11 @@
       <div class="dash-alert alert-warning" id="dash-stock-bajo" style="display: none;">
         <i class="ti ti-alert-triangle"></i>
         <span>Tienes productos con stock bajo</span>
+      </div>
+      <div class="dash-alert alert-warning" id="dash-importar-excel" style="display: none;">
+        <i class="ti ti-database-import"></i>
+        <span>Hay datos del Excel listos para importar.</span>
+        <button class="deudor-action" onclick="importarExcelInicial()" style="margin-left:auto;">Importar</button>
       </div>
     </div>
   </div>
