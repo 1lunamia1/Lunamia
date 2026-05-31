@@ -158,7 +158,7 @@
         <div class="fg"><label>Tipo / modelo</label><input type="text" id="np-tipo" placeholder="Ej: térmica, lino, baggy" oninput="actualizarCodigoPrev()" /></div>
       </div>
       <div class="fg2">
-        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option></select></div>
+        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option><option value="UNI">Unisex</option></select></div>
         <div class="fg"><label>Proveedor</label><select id="np-prov"><option value="">Sin proveedor</option></select></div>
       </div>
       <div style="background:var(--azbg);border-radius:8px;padding:10px 12px;border:0.5px solid var(--azbr);">
@@ -175,7 +175,7 @@
     <div class="mtp" id="ptp-1">
       <div class="fg2">
         <div class="fg"><label>Costo de compra</label><input type="number" id="np-costo" placeholder="0" oninput="calcPrecioNuevo()"/></div>
-        <div class="fg"><label>Ganancia (%)</label><input type="number" id="np-gan" value="110" oninput="calcPrecioNuevo()"/></div>
+        <div class="fg"><label>Ganancia (%)</label><input type="number" id="np-gan" value="140" oninput="calcPrecioNuevo()"/></div>
       </div>
       <div class="precio-calc">
         <div><div class="pc-label">Precio final sugerido</div><div class="pc-value" id="np-precio-final">$—</div></div>
@@ -186,7 +186,58 @@
     </div>
     <div class="mtp" id="ptp-2">
       <div class="fg" style="margin-bottom:10px;"><div class="sect-title">Colores</div><div class="tag-strip" id="np-colores"></div></div>
-      <div class="fg"><div class="sect-title">Talles</div><div class="tag-strip" id="np-talles"></div></div>
+      <div class="fg" style="margin-bottom:14px;">
+        <div class="sect-title" style="margin-bottom:10px;">Talles</div>
+
+        <div style="margin-bottom:11px;">
+          <div style="font-size:10px;font-weight:600;color:var(--gt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Numéricos</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <label class="talle-btn"><input type="checkbox" value="1" onchange="syncTallesStrip()"/><span>1</span></label>
+            <label class="talle-btn"><input type="checkbox" value="2" onchange="syncTallesStrip()"/><span>2</span></label>
+            <label class="talle-btn"><input type="checkbox" value="3" onchange="syncTallesStrip()"/><span>3</span></label>
+            <label class="talle-btn"><input type="checkbox" value="4" onchange="syncTallesStrip()"/><span>4</span></label>
+            <label class="talle-btn"><input type="checkbox" value="5" onchange="syncTallesStrip()"/><span>5</span></label>
+            <label class="talle-btn"><input type="checkbox" value="6" onchange="syncTallesStrip()"/><span>6</span></label>
+            <label class="talle-btn"><input type="checkbox" value="7" onchange="syncTallesStrip()"/><span>7</span></label>
+            <label class="talle-btn"><input type="checkbox" value="8" onchange="syncTallesStrip()"/><span>8</span></label>
+          </div>
+        </div>
+
+        <div style="margin-bottom:11px;">
+          <div style="font-size:10px;font-weight:600;color:var(--gt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Letras</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <label class="talle-btn"><input type="checkbox" value="XS" onchange="syncTallesStrip()"/><span>XS</span></label>
+            <label class="talle-btn"><input type="checkbox" value="S" onchange="syncTallesStrip()"/><span>S</span></label>
+            <label class="talle-btn"><input type="checkbox" value="M" onchange="syncTallesStrip()"/><span>M</span></label>
+            <label class="talle-btn"><input type="checkbox" value="L" onchange="syncTallesStrip()"/><span>L</span></label>
+            <label class="talle-btn"><input type="checkbox" value="XL" onchange="syncTallesStrip()"/><span>XL</span></label>
+            <label class="talle-btn"><input type="checkbox" value="XXL" onchange="syncTallesStrip()"/><span>XXL</span></label>
+            <label class="talle-btn"><input type="checkbox" value="3XL" onchange="syncTallesStrip()"/><span>3XL</span></label>
+            <label class="talle-btn"><input type="checkbox" value="4XL" onchange="syncTallesStrip()"/><span>4XL</span></label>
+            <label class="talle-btn"><input type="checkbox" value="5XL" onchange="syncTallesStrip()"/><span>5XL</span></label>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size:10px;font-weight:600;color:var(--gt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Pantalones</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <label class="talle-btn"><input type="checkbox" value="34" onchange="syncTallesStrip()"/><span>34</span></label>
+            <label class="talle-btn"><input type="checkbox" value="36" onchange="syncTallesStrip()"/><span>36</span></label>
+            <label class="talle-btn"><input type="checkbox" value="38" onchange="syncTallesStrip()"/><span>38</span></label>
+            <label class="talle-btn"><input type="checkbox" value="40" onchange="syncTallesStrip()"/><span>40</span></label>
+            <label class="talle-btn"><input type="checkbox" value="42" onchange="syncTallesStrip()"/><span>42</span></label>
+            <label class="talle-btn"><input type="checkbox" value="44" onchange="syncTallesStrip()"/><span>44</span></label>
+            <label class="talle-btn"><input type="checkbox" value="46" onchange="syncTallesStrip()"/><span>46</span></label>
+            <label class="talle-btn"><input type="checkbox" value="48" onchange="syncTallesStrip()"/><span>48</span></label>
+            <label class="talle-btn"><input type="checkbox" value="50" onchange="syncTallesStrip()"/><span>50</span></label>
+            <label class="talle-btn"><input type="checkbox" value="52" onchange="syncTallesStrip()"/><span>52</span></label>
+            <label class="talle-btn"><input type="checkbox" value="54" onchange="syncTallesStrip()"/><span>54</span></label>
+          </div>
+        </div>
+
+        <!-- strip oculto que lee el JS existente -->
+        <div class="tag-strip" id="np-talles" style="display:none;"></div>
+      </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 7px;">
         <div style="font-size:11px;font-weight:500;color:var(--gt);text-transform:uppercase;letter-spacing:.04em;">Variantes</div>
         <button class="btn-ghost btn-sm" onclick="generarVariantesProd()"><i class="ti ti-refresh"></i>Generar</button>
@@ -399,6 +450,27 @@
 </div>
 </div>
 
+<style>
+.talle-btn { display:inline-flex; cursor:pointer; user-select:none; }
+.talle-btn input[type="checkbox"] { display:none; }
+.talle-btn span {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:38px; height:34px; padding:0 10px; border-radius:7px;
+  border:1.5px solid var(--brd,#e0d8d0); background:var(--crd,#faf8f5);
+  color:var(--ct,#333); font-size:12px; font-weight:500;
+  transition:border-color .15s, background .15s, color .15s;
+}
+.talle-btn input:checked + span { border-color:var(--ng,#222); background:var(--ng,#222); color:var(--cr,#fff); }
+.talle-btn:hover span { border-color:var(--ng,#222); }
+</style>
+<script>
+function syncTallesStrip() {
+  const strip = document.getElementById('np-talles');
+  if (!strip) return;
+  const checked = Array.from(document.querySelectorAll('#ptp-2 .talle-btn input:checked')).map(cb => cb.value);
+  strip.innerHTML = checked.map(v => `<div class="tag on" data-val="${v}">${v}</div>`).join('');
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script src="data/import-summary.js"></script>
