@@ -678,7 +678,7 @@ function abrirNuevoProd(){
   document.getElementById("np-cat").innerHTML=categoriaOptions();
   document.getElementById("np-cat").value="";
   document.getElementById("np-gen").value="";
-  document.getElementById("np-gan").value="110";
+  document.getElementById("np-gan").value="140";
   document.getElementById("np-codigo-edit").value="";
   document.getElementById("np-codigo-sug").textContent="Las variantes usarán este código como base.";
   document.getElementById("np-codigo-prev").textContent="—";
@@ -716,7 +716,7 @@ function renderCodigoSugerencias(){
 }
 function calcPrecioNuevo(){
   const c=parseFloat(document.getElementById("np-costo").value)||0;
-  const g=parseFloat(document.getElementById("np-gan").value)||0;
+  const g=parseFloat(document.getElementById("np-gan").value)||140;
   if(!c)return;
   const p=roundPsy(c*(1+g/100));
   document.getElementById("np-precio-final").textContent=fmt(p);
