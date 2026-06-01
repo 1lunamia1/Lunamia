@@ -941,7 +941,7 @@ function renderPDV(){
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">
           <span style="font-size:10px;color:var(--gc);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-right:2px;">Categoría</span>
           <button class="btn-ghost btn-sm${!pdvFiltCat?" pdv-filt-on":""}" onclick="pdvFiltCat='';renderProdGrid()">Todas</button>
-          ${["Pantalones","Buzos","Camperas","Remeras"].map(c=>`<button class="btn-ghost btn-sm${pdvFiltCat===c?" pdv-filt-on":""}" onclick="pdvFiltCat='${c}';renderProdGrid()">${c}</button>`).join("")}
+          ${categoriasDisponibles().map(c=>`<button class="btn-ghost btn-sm${(pdvFiltCat||"").toLowerCase()===c.nombre.toLowerCase()?" pdv-filt-on":""}" onclick="pdvFiltCat='${c.nombre}';renderProdGrid()">${c.nombre}</button>`).join("")}
           <div style="width:1px;height:18px;background:var(--crb);margin:0 4px;"></div>
           <button class="btn-ghost btn-sm${!pdvFiltGen?" pdv-filt-on":""}" onclick="pdvFiltGen='';renderProdGrid()">Ambos</button>
           <button class="btn-ghost btn-sm${pdvFiltGen==="Dama"?" pdv-filt-on":""}" onclick="pdvFiltGen='Dama';renderProdGrid()">Dama</button>
@@ -950,10 +950,7 @@ function renderPDV(){
 
         <!-- Grilla de productos (vacía por defecto) -->
         <div id="pdv-grid-wrap">
-          <div id="pdv-empty-state" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;color:var(--gc);gap:10px;">
-            <i class="ti ti-search" style="font-size:32px;opacity:.2;"></i>
-            <span style="font-size:13px;">Sin resultados</span>
-          </div>
+          <div id="pdv-empty-state" style="display:none;"></div>
           <div class="prod-grid" id="prod-grid" style="display:none;"></div>
         </div>
       </div>
@@ -1004,42 +1001,58 @@ function renderPDV(){
 }
 
 function renderProdGrid(){
-  const q=pdvFiltQ.trim().toLowerCase();
+  const q = (pdvFiltQ||"").trim().toLowerCase();
+  const gridEl = document.getElementById("prod-grid");
+  const emptyEl = document.getElementById("pdv-empty-state");
+  if(!gridEl) return;
 
-  const emptyEl=document.getElementById("pdv-empty-state");
-  const gridEl=document.getElementById("prod-grid");
-  if(!gridEl)return;
+  // Mostrar grilla siempre
+  gridEl.style.display = "grid";
+  if(emptyEl) emptyEl.style.display = "none";
 
-  if(emptyEl) emptyEl.style.display="none";
-  gridEl.style.display="grid";
+  // Filtrar
+  const prods = DB.productos.filter(p => {
+    const cat = (p.cat||"").toLowerCase();
+    const filtCat = (pdvFiltCat||"").toLowerCase();
+    const catOk = !filtCat || cat === filtCat;
 
-  // Filtrar productos — categoría acepta nombre completo o código (ej: "Pantalones" o "PAN")
-  const prods=DB.productos.filter(p=>{
-    const catMatch = !pdvFiltCat || p.cat===pdvFiltCat ||
-      p.cat===categoriaNombre(pdvFiltCat) ||
-      categoriaCodigo(p.cat)===pdvFiltCat;
-    const genMatch = !pdvFiltGen || p.gen===pdvFiltGen;
-    const qMatch = !q || p.nombre.toLowerCase().includes(q) || (p.codigo||"").toLowerCase().includes(q);
-    return catMatch && genMatch && qMatch;
+    const gen = (p.gen||"").toLowerCase();
+    const filtGen = (pdvFiltGen||"").toLowerCase();
+    const genOk = !filtGen || gen === filtGen || gen.startsWith(filtGen.slice(0,3));
+
+    const nombre = (p.nombre||"").toLowerCase();
+    const codigo = (p.codigo||"").toLowerCase();
+    const qOk = !q || nombre.includes(q) || codigo.includes(q);
+
+    return catOk && genOk && qOk;
   });
 
   if(!prods.length){
-    gridEl.innerHTML=`<div style="grid-column:1/-1;padding:32px;text-align:center;color:var(--gc);font-size:13px;"><i class="ti ti-mood-sad" style="font-size:24px;display:block;margin-bottom:8px;opacity:.3;"></i>Sin resultados para esta búsqueda</div>`;
+    gridEl.innerHTML = `<div style="grid-column:1/-1;padding:32px;text-align:center;color:var(--gc);font-size:13px;">
+      <i class="ti ti-mood-sad" style="font-size:24px;display:block;margin-bottom:8px;opacity:.3;"></i>
+      Sin resultados</div>`;
     return;
   }
 
-  gridEl.innerHTML=prods.map(p=>{
-    const t=stockTotal(p); const sn=t===0;
-    return`<div class="prod-card${sn?" sn":""}" onclick="${sn?"":` selPdvProd(${p.id})`}">
-      <div class="pc-name">${p.nombre}</div>
-      <div class="pc-code">${p.codigo}</div>
+  gridEl.innerHTML = prods.map(p => {
+    const t = stockTotal(p);
+    const sn = t === 0;
+    const clickable = !sn;
+    return `<div class="prod-card${sn?" sn":""}" ${clickable?`onclick="selPdvProd(${p.id})"`:""} style="cursor:${clickable?"pointer":"default"};">
+      <div class="pc-name">${p.nombre||""}</div>
+      <div class="pc-code">${p.codigo||""}</div>
       <div style="display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:13px;font-weight:500;">${fmt(p.precio)}</span>
-        ${sn?`<span class="bd bd-rj" style="font-size:10px;">Sin stock</span>`:t<=3?`<span class="bd bd-bj" style="font-size:10px;">${t} ud.</span>`:`<span class="bd bd-ok" style="font-size:10px;">${t} ud.</span>`}
+        <span style="font-size:13px;font-weight:500;">${fmt(p.precio||0)}</span>
+        ${sn
+          ? `<span class="bd bd-rj" style="font-size:10px;">Sin stock</span>`
+          : t<=3
+            ? `<span class="bd bd-bj" style="font-size:10px;">${t} ud.</span>`
+            : `<span class="bd bd-ok" style="font-size:10px;">${t} ud.</span>`}
       </div>
     </div>`;
   }).join("");
 }
+
 
 function selPdvProd(pid){
   const p=DB.productos.find(x=>x.id===pid);
