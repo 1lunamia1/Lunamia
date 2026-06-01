@@ -197,16 +197,20 @@ function cargarUltimasVentas() {
   
   let html = '';
   ventas.forEach(venta => {
+    const descuentoMsg = venta.descuentoConjuntoAplicado ? '<span style="font-size:10px;color:var(--az);margin-left:8px;">Se aplicó desc por conj</span>' : '';
     html += `
       <div class="venta-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:0.5px solid var(--crb);">
         <div class="venta-item-info" style="flex:1;">
           <div class="venta-item-cliente">${venta.cliente}</div>
-          <div class="venta-item-meta">Venta #${venta.id} · ${venta.hora}</div>
+          <div class="venta-item-meta">Venta #${venta.id} · ${venta.hora}${descuentoMsg}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="venta-item-monto">${formatearMoney(venta.total)}</div>
           <button class="btn-ghost btn-sm" onclick="editarVenta(${venta.id}, false)" title="Editar venta" style="padding:4px 8px;">
             <i class="ti ti-edit" style="font-size:14px;"></i>
+          </button>
+          <button class="btn-ghost btn-sm" onclick="eliminarVenta(${venta.id})" title="Eliminar venta" style="padding:4px 8px;color:var(--rj);">
+            <i class="ti ti-trash" style="font-size:14px;"></i>
           </button>
         </div>
       </div>
@@ -214,6 +218,37 @@ function cargarUltimasVentas() {
   });
   
   listElement.innerHTML = html;
+}
+
+// Eliminar venta desde dashboard
+function eliminarVenta(idVenta) {
+  if (!confirm('¿Confirmas que deseas eliminar esta venta?')) return;
+  
+  const db = typeof DB !== "undefined" ? DB : null;
+  if (!db) return;
+  
+  const venta = db.ventas.find(v => v.id === idVenta);
+  if (venta) {
+    venta.eliminada = true;
+    persistDBSoon();
+    cargarUltimasVentas();
+    actualizarDashboard();
+  }
+}
+
+// Eliminar devolución desde módulo de devoluciones
+function eliminarDevolucion(idDevolucion) {
+  if (!confirm('¿Confirmas que deseas eliminar esta devolución?')) return;
+  
+  const db = typeof DB !== "undefined" ? DB : null;
+  if (!db) return;
+  
+  const index = db.devoluciones.findIndex(d => d.id === idDevolucion);
+  if (index > -1) {
+    db.devoluciones.splice(index, 1);
+    persistDBSoon();
+    renderDevoluciones();
+  }
 }
 
 // Cargar clientes con deuda
