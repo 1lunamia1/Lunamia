@@ -66,6 +66,10 @@ function abrirFormularioEditarVenta(venta) {
   document.getElementById('ev-hora').value = venta.hora || '00:00';
   document.getElementById('ev-obs').value = venta.observaciones || '';
 
+  // Llenar campos de conjunto si existen
+  document.getElementById('ev-conjunto-id').value = venta.conjuntoId || '';
+  document.getElementById('ev-tipo-conjunto').value = venta.tipoConjunto || '';
+
   // Mostrar información de auditoría
   mostrarInfoAuditoria(venta);
 
@@ -75,6 +79,8 @@ function abrirFormularioEditarVenta(venta) {
   // Setup listeners para cálculos
   document.getElementById('ev-cantidad').addEventListener('input', recalcularTotalEdicion);
   document.getElementById('ev-precio').addEventListener('input', recalcularTotalEdicion);
+  document.getElementById('ev-conjunto-id').addEventListener('change', recalcularTotalEdicion);
+  document.getElementById('ev-tipo-conjunto').addEventListener('change', recalcularTotalEdicion);
 }
 
 /**
@@ -154,14 +160,29 @@ function crearModalEditarVenta() {
             </div>
           </div>
 
-          <!-- TOTAL -->
+          <!-- CONJUNTO (OPCIONAL) -->
+          <div class="fg2">
+            <div class="fg">
+              <label>ID Conjunto</label>
+              <input type="text" id="ev-conjunto-id" placeholder="ej: CONJ1" style="font-size:12px;"/>
+            </div>
+            <div class="fg">
+              <label>Tipo Conjunto</label>
+              <input type="text" id="ev-tipo-conjunto" placeholder="ej: REMERA" style="font-size:12px;"/>
+            </div>
+          </div>
+
+          <!-- TOTAL CON DESCUENTO -->
           <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:12px 14px;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;">
             <div>
-              <div style="font-size:11px;color:var(--gc);">Total</div>
-              <div style="font-size:22px;font-weight:500;" id="ev-total">$0</div>
+              <div style="font-size:11px;color:var(--gc);">Subtotal</div>
+              <div style="font-size:18px;font-weight:500;" id="ev-subtotal">$0</div>
+              <div id="ev-descuento-info" style="font-size:10px;color:var(--gc);margin-top:3px;"></div>
             </div>
             <div style="text-align:right;">
-              <div id="ev-diferencia" style="font-size:11px;color:var(--gc);"></div>
+              <div style="font-size:11px;color:var(--gc);">Total</div>
+              <div style="font-size:22px;font-weight:500;" id="ev-total">$0</div>
+              <div id="ev-diferencia" style="font-size:11px;color:var(--gc);margin-top:3px;"></div>
             </div>
           </div>
 
@@ -251,18 +272,61 @@ function llenarSelectosEdicionVenta() {
 }
 
 /**
- * Recalcula el total cuando cambia cantidad o precio
+ * Recalcula el total cuando cambia cantidad, precio o campos de conjunto
+ * Aplica descuentos por conjuntos automáticamente
  */
 function recalcularTotalEdicion() {
   const cantidad = parseFloat(document.getElementById('ev-cantidad').value) || 0;
   const precio = parseFloat(document.getElementById('ev-precio').value) || 0;
-  const total = cantidad * precio;
+  const conjuntoId = document.getElementById('ev-conjunto-id').value;
+  const tipoConjunto = document.getElementById('ev-tipo-conjunto').value;
+
+  // Calcular subtotal base
+  const subtotal = cantidad * precio;
   const originalTotal = ventaOriginal?.total || 0;
 
-  document.getElementById('ev-total').textContent = formatearMoney(total);
+  // Crear objeto producto para aplicar descuentos
+  const producto = {
+    id: parseInt(document.getElementById('ev-producto-id').value) || 0,
+    nombre: DB.productos.find(p => p.id === parseInt(document.getElementById('ev-producto-id').value))?.nombre || 'Producto',
+    precio: precio,
+    cantidad: cantidad,
+    conjuntoId: conjuntoId || null,
+    tipoConjunto: tipoConjunto || null
+  };
 
-  // Mostrar diferencia
-  const diferencia = total - originalTotal;
+  // Aplicar descuentos por conjuntos si existe tanto conjuntoId como tipoConjunto
+  let descuentoConjunto = 0;
+  let descuentoInfo = '';
+  let totalConDescuento = subtotal;
+
+  if (conjuntoId && tipoConjunto) {
+    // Crear array con el producto para aplicar la lógica de conjuntos
+    const productos = [producto];
+    const resultado = aplicarDescuentoPorConjunto(productos);
+    
+    if (resultado.descuentoConjuntoAplicado) {
+      descuentoConjunto = resultado.descuentoTotal;
+      totalConDescuento = subtotal - descuentoConjunto;
+      const detalles = resultado.detalles[0];
+      if (detalles) {
+        descuentoInfo = `Conjunto: -${formatearMoney(descuentoConjunto)} (10%)`;
+      }
+    }
+  }
+
+  // Mostrar valores
+  document.getElementById('ev-subtotal').textContent = formatearMoney(subtotal);
+  document.getElementById('ev-total').textContent = formatearMoney(totalConDescuento);
+  
+  if (descuentoInfo) {
+    document.getElementById('ev-descuento-info').textContent = descuentoInfo;
+  } else {
+    document.getElementById('ev-descuento-info').textContent = '';
+  }
+
+  // Mostrar diferencia respecto al original
+  const diferencia = totalConDescuento - originalTotal;
   const diffEl = document.getElementById('ev-diferencia');
   
   if (Math.abs(diferencia) > 0.01) {
@@ -273,7 +337,7 @@ function recalcularTotalEdicion() {
   }
 
   // Detectar otros cambios
-  detectarCambios(total);
+  detectarCambios(totalConDescuento);
 }
 
 /**
@@ -290,6 +354,8 @@ function detectarCambios(totalNuevo) {
   const fecha = document.getElementById('ev-fecha').value;
   const hora = document.getElementById('ev-hora').value;
   const obs = document.getElementById('ev-obs').value;
+  const conjuntoId = document.getElementById('ev-conjunto-id').value;
+  const tipoConjunto = document.getElementById('ev-tipo-conjunto').value;
 
   // Comparar con original
   if (productoId !== ventaOriginal.producto) cambios.push(`Producto: ${DB.productos.find(p=>p.id===ventaOriginal.producto)?.nombre || 'N/A'} → ${DB.productos.find(p=>p.id===productoId)?.nombre || 'N/A'}`);
@@ -301,6 +367,8 @@ function detectarCambios(totalNuevo) {
   if (fecha !== (ventaOriginal.fecha_iso || todayShort().split('/').reverse().join('-'))) cambios.push(`Fecha: ${ventaOriginal.fecha} → ${fecha}`);
   if (hora !== ventaOriginal.hora) cambios.push(`Hora: ${ventaOriginal.hora} → ${hora}`);
   if (obs !== ventaOriginal.observaciones) cambios.push(`Observaciones: Modificadas`);
+  if ((conjuntoId || '') !== (ventaOriginal.conjuntoId || '')) cambios.push(`Conjunto: ${ventaOriginal.conjuntoId || 'Ninguno'} → ${conjuntoId || 'Ninguno'}`);
+  if ((tipoConjunto || '') !== (ventaOriginal.tipoConjunto || '')) cambios.push(`Tipo: ${ventaOriginal.tipoConjunto || 'Ninguno'} → ${tipoConjunto || 'Ninguno'}`);
 
   // Mostrar cambios
   const resumenEl = document.getElementById('ev-cambios-resumen');
@@ -354,7 +422,8 @@ function guardarCambiosVenta() {
   const clienteNombre = document.getElementById('ev-cliente-nombre').value || 'Consumidor final';
   const cantidad = parseFloat(document.getElementById('ev-cantidad').value) || 1;
   const precio = parseFloat(document.getElementById('ev-precio').value) || 0;
-  const total = cantidad * precio;
+  const conjuntoId = document.getElementById('ev-conjunto-id').value || null;
+  const tipoConjunto = document.getElementById('ev-tipo-conjunto').value || null;
   const metodo = document.getElementById('ev-metodo-pago').value;
   const fecha = document.getElementById('ev-fecha').value;
   const hora = document.getElementById('ev-hora').value;
@@ -365,8 +434,30 @@ function guardarCambiosVenta() {
     return;
   }
 
+  // Calcular total final (con descuentos por conjuntos)
+  const producto = {
+    id: productoId,
+    nombre: DB.productos.find(p => p.id === productoId)?.nombre || 'Producto',
+    precio: precio,
+    cantidad: cantidad,
+    conjuntoId: conjuntoId,
+    tipoConjunto: tipoConjunto
+  };
+
+  let totalFinal = cantidad * precio;
+  let descuentoConjuntoMonto = 0;
+
+  // Aplicar descuentos si existe conjunto completo
+  if (conjuntoId && tipoConjunto) {
+    const resultado = aplicarDescuentoPorConjunto([producto]);
+    if (resultado.descuentoConjuntoAplicado) {
+      descuentoConjuntoMonto = resultado.descuentoTotal;
+      totalFinal = (cantidad * precio) - descuentoConjuntoMonto;
+    }
+  }
+
   // Calcular diferencia de totales para ajustar cajas
-  const diferencia = total - ventaOriginal.total;
+  const diferencia = totalFinal - ventaOriginal.total;
 
   // Actualizar venta en la base
   const ventaIdx = DB.ventas.findIndex(v => v.id === editingVentaId);
@@ -378,7 +469,10 @@ function guardarCambiosVenta() {
       cliente: clienteNombre,
       cantidad,
       precio_unitario: precio,
-      total,
+      total: totalFinal,
+      conjuntoId: conjuntoId,
+      tipoConjunto: tipoConjunto,
+      descuentoConjunto: descuentoConjuntoMonto,
       metodo_pago: metodo,
       fecha_iso_editado: fecha,
       hora,
@@ -395,14 +489,20 @@ function guardarCambiosVenta() {
               metodo_pago: ventaOriginal.metodo_pago,
               cliente: ventaOriginal.cliente,
               cantidad: ventaOriginal.cantidad,
-              precio_unitario: ventaOriginal.precio_unitario
+              precio_unitario: ventaOriginal.precio_unitario,
+              conjuntoId: ventaOriginal.conjuntoId,
+              tipoConjunto: ventaOriginal.tipoConjunto,
+              descuentoConjunto: ventaOriginal.descuentoConjunto
             },
             ahora: {
-              total,
+              total: totalFinal,
               metodo_pago: metodo,
               cliente: clienteNombre,
               cantidad,
-              precio_unitario: precio
+              precio_unitario: precio,
+              conjuntoId,
+              tipoConjunto,
+              descuentoConjunto: descuentoConjuntoMonto
             }
           }
         }
@@ -417,7 +517,7 @@ function guardarCambiosVenta() {
       editingVentaId,
       diferencia,
       ventaOriginal.total,
-      total,
+      totalFinal,
       ventaOriginal.metodo_pago,
       metodo
     );
