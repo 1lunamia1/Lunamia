@@ -2,7 +2,7 @@
    DATOS GLOBALES
 ═══════════════════════════════════════════════════ */
 const COLORES=["Negro","Blanco","Azul","Rojo","Gris","Beige","Verde","Rosa","Kaki","Celeste","Rust","Naranja","Único"];
-const TALLES=["1","2","3","4","5","6","7","8","XS","S","M","L","XL","XXL","3XL","4XL","5XL","34","36","38","40","42","44","46","48","50","52","54","56","Único"];
+const TALLES=["1","2","3","4","5","6","7","8","XS","S","M","L","XL","XXL","3XL","4XL","5XL","34","36","38","40","42","44","46","48","50","52","54","Único"];
 const CAT_MAP={PAN:"Pantalones",BUZ:"Buzos",CAM:"Camperas",REM:"Remeras"};
 const GEN_MAP={DAM:"Dama",CAB:"Caballero"};
 const AV_COLS=["av-az","av-te","av-am","av-pu","av-vd"];
@@ -950,9 +950,9 @@ function renderPDV(){
 
         <!-- Grilla de productos (vacía por defecto) -->
         <div id="pdv-grid-wrap">
-          <div id="pdv-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;color:var(--gc);gap:10px;">
+          <div id="pdv-empty-state" style="display:none;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;color:var(--gc);gap:10px;">
             <i class="ti ti-search" style="font-size:32px;opacity:.2;"></i>
-            <span style="font-size:13px;">Buscá un producto o aplicá un filtro para ver resultados</span>
+            <span style="font-size:13px;">Sin resultados</span>
           </div>
           <div class="prod-grid" id="prod-grid" style="display:none;"></div>
         </div>
@@ -1005,29 +1005,23 @@ function renderPDV(){
 
 function renderProdGrid(){
   const q=pdvFiltQ.trim().toLowerCase();
-  const hasFiltro = q || pdvFiltCat || pdvFiltGen;
 
   const emptyEl=document.getElementById("pdv-empty-state");
   const gridEl=document.getElementById("prod-grid");
   if(!gridEl)return;
 
-  // Si no hay filtro activo → mostrar estado vacío
-  if(!hasFiltro){
-    if(emptyEl) emptyEl.style.display="flex";
-    gridEl.style.display="none";
-    gridEl.innerHTML="";
-    return;
-  }
-
-  // Filtrar productos
-  const prods=DB.productos.filter(p=>
-    (!q || p.nombre.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q)) &&
-    (!pdvFiltCat || p.cat===pdvFiltCat) &&
-    (!pdvFiltGen || p.gen===pdvFiltGen)
-  );
-
   if(emptyEl) emptyEl.style.display="none";
   gridEl.style.display="grid";
+
+  // Filtrar productos — categoría acepta nombre completo o código (ej: "Pantalones" o "PAN")
+  const prods=DB.productos.filter(p=>{
+    const catMatch = !pdvFiltCat || p.cat===pdvFiltCat ||
+      p.cat===categoriaNombre(pdvFiltCat) ||
+      categoriaCodigo(p.cat)===pdvFiltCat;
+    const genMatch = !pdvFiltGen || p.gen===pdvFiltGen;
+    const qMatch = !q || p.nombre.toLowerCase().includes(q) || (p.codigo||"").toLowerCase().includes(q);
+    return catMatch && genMatch && qMatch;
+  });
 
   if(!prods.length){
     gridEl.innerHTML=`<div style="grid-column:1/-1;padding:32px;text-align:center;color:var(--gc);font-size:13px;"><i class="ti ti-mood-sad" style="font-size:24px;display:block;margin-bottom:8px;opacity:.3;"></i>Sin resultados para esta búsqueda</div>`;
@@ -1062,9 +1056,7 @@ function selPdvProd(pid){
 
 function addToCarrito(pid, vcod){
   const p=typeof pid==="number"?DB.productos.find(x=>x.id===pid):pid;
-  // vcod puede ser string (código) u objeto variante directamente
-  const v=(typeof vcod==="string")?p.variantes.find(x=>x.cod===vcod):vcod;
-  if(!v){return;}
+  const v=typeof vcod==="string"?p.variantes.find(x=>x.cod===vcod):vcod;
   const ex=carrito().items.find(x=>x.cod===v.cod);
   if(ex){if(ex.qty>=v.stock)return;ex.qty++;}
   else carrito().items.push({pid:p.id,cod:v.cod,nombre:p.nombre,color:v.c,talle:v.t,precio:p.precio,qty:1});
