@@ -85,7 +85,7 @@ async function obtenerDatosResumen() {
   const fechaHoy = typeof todayShort === "function"
     ? todayShort()
     : new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}).replace("/", "/");
-  const ventasHoy = db.ventas.filter(v => v.fecha === fechaHoy);
+  const ventasHoy = db.ventas.filter(v => v.fecha === fechaHoy && !v.eliminada);
   return {
     ventasHoy: ventasHoy.reduce((a,v)=>a+(v.total||0),0),
     cantVentas: ventasHoy.length,
@@ -183,7 +183,7 @@ function actualizarAvisoImportacion(){
 function cargarUltimasVentas() {
   const listElement = document.getElementById('dash-ventas-list');
   const db = typeof DB !== "undefined" ? DB : null;
-  const ventas = db ? db.ventas.slice(0,5) : [];
+  const ventas = db ? db.ventas.filter(v => !v.eliminada).slice(0,5) : [];
 
   if (ventas.length === 0) {
     listElement.innerHTML = `
@@ -198,12 +198,17 @@ function cargarUltimasVentas() {
   let html = '';
   ventas.forEach(venta => {
     html += `
-      <div class="venta-item">
-        <div class="venta-item-info">
+      <div class="venta-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:0.5px solid var(--crb);">
+        <div class="venta-item-info" style="flex:1;">
           <div class="venta-item-cliente">${venta.cliente}</div>
           <div class="venta-item-meta">Venta #${venta.id} · ${venta.hora}</div>
         </div>
-        <div class="venta-item-monto">${formatearMoney(venta.total)}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="venta-item-monto">${formatearMoney(venta.total)}</div>
+          <button class="btn-ghost btn-sm" onclick="editarVenta(${venta.id}, false)" title="Editar venta" style="padding:4px 8px;">
+            <i class="ti ti-edit" style="font-size:14px;"></i>
+          </button>
+        </div>
       </div>
     `;
   });
