@@ -2,7 +2,7 @@
    DATOS GLOBALES
 ═══════════════════════════════════════════════════ */
 const COLORES=["Negro","Blanco","Azul","Rojo","Gris","Beige","Verde","Rosa","Kaki","Celeste","Rust","Naranja","Único"];
-const TALLES=["XS","S","M","L","XL","XXL","34","36","38","40","42","44","Único"];
+const TALLES=["1","2","3","4","5","6","7","8","XS","S","M","L","XL","XXL","3XL","4XL","5XL","34","36","38","40","42","44","46","48","50","52","54","Único"];
 const CAT_MAP={PAN:"Pantalones",BUZ:"Buzos",CAM:"Camperas",REM:"Remeras"};
 const GEN_MAP={DAM:"Dama",CAB:"Caballero"};
 const AV_COLS=["av-az","av-te","av-am","av-pu","av-vd"];
@@ -678,7 +678,7 @@ function abrirNuevoProd(){
   document.getElementById("np-cat").innerHTML=categoriaOptions();
   document.getElementById("np-cat").value="";
   document.getElementById("np-gen").value="";
-  document.getElementById("np-gan").value="140";
+  document.getElementById("np-gan").value="110";
   document.getElementById("np-codigo-edit").value="";
   document.getElementById("np-codigo-sug").textContent="Las variantes usarán este código como base.";
   document.getElementById("np-codigo-prev").textContent="—";
@@ -716,7 +716,7 @@ function renderCodigoSugerencias(){
 }
 function calcPrecioNuevo(){
   const c=parseFloat(document.getElementById("np-costo").value)||0;
-  const g=parseFloat(document.getElementById("np-gan").value)||140;
+  const g=parseFloat(document.getElementById("np-gan").value)||0;
   if(!c)return;
   const p=roundPsy(c*(1+g/100));
   document.getElementById("np-precio-final").textContent=fmt(p);
@@ -724,6 +724,12 @@ function calcPrecioNuevo(){
   document.getElementById("np-precio-edit").value=p;
 }
 function generarVariantesProd(){
+  // Sincronizar npTalles desde checkboxes del HTML (si existen)
+  const talleChecks=document.querySelectorAll('#ptp-2 .talle-btn input[type="checkbox"]:checked');
+  if(talleChecks.length>0){npTalles=Array.from(talleChecks).map(cb=>cb.value);}
+  // Sincronizar npColores desde tags .sel del strip (si existen)
+  const colorTags=document.querySelectorAll('#np-colores .tag.sel');
+  if(colorTags.length>0){npColores=Array.from(colorTags).map(el=>el.textContent.trim());}
   const baseCodigo=document.getElementById("np-codigo-edit").value||codigoProductoSugerido()||"XXX-SIN-GEN-001";
   npVarsTmp=[];
   if(!npColores.length&&!npTalles.length){npVarsTmp=[{c:"Único",t:"Único"}];}
