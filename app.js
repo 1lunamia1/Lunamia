@@ -2,7 +2,7 @@
    DATOS GLOBALES
 ═══════════════════════════════════════════════════ */
 const COLORES=["Negro","Blanco","Azul","Rojo","Gris","Beige","Verde","Rosa","Kaki","Celeste","Rust","Naranja","Único"];
-const TALLES=["1","2","3","4","5","6","7","8","XS","S","M","L","XL","XXL","3XL","4XL","5XL","34","36","38","40","42","44","46","48","50","52","54","Único"];
+const TALLES=["1","2","3","4","5","6","7","8","XS","S","M","L","XL","XXL","3XL","4XL","5XL","34","36","38","40","42","44","46","48","50","52","54","56","Único"];
 const CAT_MAP={PAN:"Pantalones",BUZ:"Buzos",CAM:"Camperas",REM:"Remeras"};
 const GEN_MAP={DAM:"Dama",CAB:"Caballero"};
 const AV_COLS=["av-az","av-te","av-am","av-pu","av-vd"];
@@ -1062,7 +1062,9 @@ function selPdvProd(pid){
 
 function addToCarrito(pid, vcod){
   const p=typeof pid==="number"?DB.productos.find(x=>x.id===pid):pid;
-  const v=typeof vcod==="string"?p.variantes.find(x=>x.cod===vcod):vcod;
+  // vcod puede ser string (código) u objeto variante directamente
+  const v=(typeof vcod==="string")?p.variantes.find(x=>x.cod===vcod):vcod;
+  if(!v){return;}
   const ex=carrito().items.find(x=>x.cod===v.cod);
   if(ex){if(ex.qty>=v.stock)return;ex.qty++;}
   else carrito().items.push({pid:p.id,cod:v.cod,nombre:p.nombre,color:v.c,talle:v.t,precio:p.precio,qty:1});

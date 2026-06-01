@@ -48,10 +48,19 @@ function abrirFormularioEditarVenta(venta) {
     modal = document.getElementById(modalId);
   }
 
-  const producto = DB.productos.find(p => p.id === venta.producto);
-  const cliente = venta.cliente_id 
+  // Compatibilidad: el sistema guarda venta.items (string) y venta.metodo
+  const cliente = venta.cliente_id
     ? DB.clientes.find(c => c.id === venta.cliente_id)
     : null;
+
+  // Convertir fecha dd/mm/aaaa -> aaaa-mm-dd para input type=date
+  function fechaParaInput(f) {
+    if (!f) return toDateInput();
+    if (f.includes('-') && f.length === 10) return f; // ya es ISO
+    const p = f.split('/');
+    if (p.length === 3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+    return toDateInput();
+  }
 
   // Llenar campos
   document.getElementById('ev-venta-id').textContent = venta.id;
@@ -59,10 +68,15 @@ function abrirFormularioEditarVenta(venta) {
   document.getElementById('ev-cliente-id').value = venta.cliente_id || '';
   document.getElementById('ev-cliente-nombre').value = venta.cliente || 'Consumidor final';
   document.getElementById('ev-cantidad').value = venta.cantidad || 1;
-  document.getElementById('ev-precio').value = venta.precio_unitario || (producto ? producto.precio : 0);
+  document.getElementById('ev-precio').value = venta.precio_unitario || venta.total || 0;
   document.getElementById('ev-total').textContent = formatearMoney(venta.total || 0);
-  document.getElementById('ev-metodo-pago').value = venta.metodo_pago || 'efectivo';
-  document.getElementById('ev-fecha').value = venta.fecha_iso || venta.fecha_iso_editado || todayShort().split('/').reverse().join('-');
+  // Compatibilidad: campo puede llamarse metodo_pago o metodo
+  const metodoValor = venta.metodo_pago || venta.metodo || 'efectivo';
+  const metodoEl = document.getElementById('ev-metodo-pago');
+  // Mapear etiquetas legibles a valores del select
+  const metodoMap = {'Efectivo':'efectivo','Transferencia':'transferencia','Tarjeta débito':'debito','Tarjeta crédito':'credito','Mercado Pago':'mercadopago','Cta. cte.':'cuenta_corriente'};
+  metodoEl.value = metodoMap[metodoValor] || metodoValor;
+  document.getElementById('ev-fecha').value = fechaParaInput(venta.fecha_iso_editado || venta.fecha);
   document.getElementById('ev-hora').value = venta.hora || '00:00';
   document.getElementById('ev-obs').value = venta.observaciones || '';
 
@@ -462,6 +476,14 @@ function guardarCambiosVenta() {
   // Actualizar venta en la base
   const ventaIdx = DB.ventas.findIndex(v => v.id === editingVentaId);
   if (ventaIdx >= 0) {
+    // Convertir fecha ISO a formato dd/mm si es necesario
+    let fechaDisplay = fecha;
+    if (fecha && fecha.includes('-')) {
+      const fp = fecha.split('-');
+      fechaDisplay = fp[2]+'/'+fp[1]+'/'+fp[0];
+    }
+    const fechaCorta = fechaDisplay.substring(0,5); // dd/mm
+
     const ventaActualizada = {
       ...DB.ventas[ventaIdx],
       producto: productoId,
@@ -470,10 +492,12 @@ function guardarCambiosVenta() {
       cantidad,
       precio_unitario: precio,
       total: totalFinal,
+      fecha: fechaCorta,
       conjuntoId: conjuntoId,
       tipoConjunto: tipoConjunto,
       descuentoConjunto: descuentoConjuntoMonto,
       metodo_pago: metodo,
+      metodo: metodo,
       fecha_iso_editado: fecha,
       hora,
       observaciones: obs,

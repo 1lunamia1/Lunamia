@@ -38,7 +38,9 @@ function aplicarDescuentoPorConjunto(productos) {
   }
 
   // Crear copia para no mutar el array original
-  const productosModificados = cloneData(productos);
+  // cloneData puede no estar cargado aún si este script carga antes que app.js
+  const _clone = typeof cloneData === "function" ? cloneData : (d => JSON.parse(JSON.stringify(d)));
+  const productosModificados = _clone(productos);
   let descuentoTotal = 0;
   const detalles = [];
 
