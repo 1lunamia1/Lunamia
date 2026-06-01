@@ -151,14 +151,14 @@
     <div class="mtp on" id="ptp-0">
       <div class="fg2">
         <div class="fg"><label>Nombre del producto</label><input type="text" id="np-nombre" placeholder="Ej: Jean Baggy Tokio" oninput="actualizarCodigoPrev()"/></div>
-        <div class="fg"><label>Categoría</label><select id="np-cat" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="PAN">Pantalones</option><option value="BLU">Blusas</option></select></div>
+        <div class="fg"><label>Categoría</label><select id="np-cat" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="PAN">Pantalones</option><option value="BUZ">Buzos</option><option value="CAM">Camperas</option><option value="REM">Remeras</option></select></div>
       </div>
       <div class="fg2">
         <div class="fg"><label>Marca</label><input type="text" id="np-marca" placeholder="Ej: Lody" oninput="actualizarCodigoPrev()" /></div>
         <div class="fg"><label>Tipo / modelo</label><input type="text" id="np-tipo" placeholder="Ej: térmica, lino, baggy" oninput="actualizarCodigoPrev()" /></div>
       </div>
       <div class="fg2">
-        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option><option value="UNI">Unisex</option></select></div>
+        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option></select></div>
         <div class="fg"><label>Proveedor</label><select id="np-prov"><option value="">Sin proveedor</option></select></div>
       </div>
       <div style="background:var(--azbg);border-radius:8px;padding:10px 12px;border:0.5px solid var(--azbr);">
@@ -289,12 +289,12 @@
     </div>
     <div class="mtp" id="itp-2">
       <div style="background:var(--crd);border-radius:9px;padding:12px 14px;margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span style="color:var(--gt);">Unidades a ingresar</span><span style="font-weight:500;" id="ing-unidades">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span style="color:var(--gt);">Unidades a ingresar</span><span style="font-weight:500;" id="ing-uds-prev">0</span></div>
         <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--gt);">Costo total estimado</span><span style="font-weight:500;" id="ing-costo-prev">$0</span></div>
       </div>
       <div class="fg2">
         <div class="fg"><label>Total factura</label><input type="number" id="ing-total-factura" placeholder="$0"/></div>
-        <div class="fg"><label>Método de pago</label><select id="ing-metodo"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia / MP</option><option value="cuenta">Cuenta corriente</option></select></div>
+        <div class="fg"><label>Método de pago</label><select id="ing-metodo"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia / MP</option><option value="cuenta_prov">Cuenta proveedor</option></select></div>
       </div>
       <div class="fg"><label>Caja afectada</label><select id="ing-caja"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
       <div class="notif notif-am" id="ing-aviso-cc" style="display:none;"><i class="ti ti-alert-triangle" style="flex-shrink:0;"></i>Cuenta corriente proveedor: no se descuenta de caja ahora.</div>
@@ -365,7 +365,7 @@
   <div class="mh"><span class="mt"><i class="ti ti-receipt" style="margin-right:7px;"></i>Registrar gasto</span><button class="btn-ghost" onclick="closeOv('ov-gasto')"><i class="ti ti-x"></i></button></div>
   <div class="mc">
     <div class="fg2">
-      <div class="fg"><label>Categoría</label><select id="g-cat"><option>Bolsas y packaging</option><option>Perchas e insumos</option><option>Limpieza</option><option>Viáticos / transporte</option></select></div>
+      <div class="fg"><label>Categoría</label><select id="g-cat"><option>Bolsas y packaging</option><option>Perchas e insumos</option><option>Limpieza</option><option>Viáticos / transporte</option><option>Mantenimiento</option><option>Otros</option></select></div>
       <div class="fg"><label>Monto</label><input type="number" id="g-monto" placeholder="$0"/></div>
     </div>
     <div class="fg2">
@@ -475,6 +475,7 @@ function syncTallesStrip() {
 <script src="config.js"></script>
 <script src="data/import-summary.js"></script>
 <script src="dashboard.js"></script>
+<script src="editar-venta.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
