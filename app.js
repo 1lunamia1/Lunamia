@@ -1824,7 +1824,7 @@ function renderCajaMovimientos(){
                 <span>${fmtDate(day)} · ${items.length} mov.</span><span style="color:${db>=0?"var(--vd)":"var(--rj)"};">${db>=0?"+":"−"}${fmt(Math.abs(db))}</span>
               </summary>
               <div style="padding:0 12px 8px;">
-                ${items.map(m=>`<div class="mov-item"><div style="display:flex;align-items:center;gap:8px;"><div class="mi-icon ${m.signo>0?"mi-abono":"mi-cargo"}"><i class="ti ti-${m.signo>0?"arrow-down":"arrow-up"}" style="font-size:12px;"></i></div><div><div style="font-size:12px;font-weight:500;">${m.concepto}</div><div style="font-size:10px;color:var(--gc);">${m.hora||"—"} · ${m.medio||"—"}</div></div></div><div style="font-size:13px;font-weight:500;color:${m.signo>0?"var(--vd)":"var(--rj)"};">${m.signo>0?"+":"−"}${fmt(m.monto)}</div></div>`).join("")}
+                ${items.map(m=>`<div class="mov-item"><div style="display:flex;align-items:center;gap:8px;"><div class="mi-icon ${m.signo>0?"mi-abono":"mi-cargo"}"><i class="ti ti-${m.signo>0?"arrow-down":"arrow-up"}" style="font-size:12px;"></i></div><div><div style="font-size:12px;font-weight:500;">${m.concepto}</div><div style="font-size:10px;color:var(--gc);">${m.hora||"—"} · ${m.medio||"—"}${m.editado_en?' · <span style="color:var(--am);">editado</span>':""}</div></div></div><div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:${m.signo>0?"var(--vd)":"var(--rj)"};">${m.signo>0?"+":"−"}${fmt(m.monto)}</div>${m.tipo!=="venta"?`<button class="btn-icon" onclick="editarMovimiento(${m.id})" title="Editar"><i class="ti ti-pencil" style="font-size:11px;"></i></button><button class="btn-icon" onclick="eliminarMovimiento(${m.id})" title="Eliminar" style="color:var(--rj);"><i class="ti ti-trash" style="font-size:11px;"></i></button>`:""}</div></div>`).join("")}
               </div>
             </details>`;}).join("")}
           </div>
@@ -2036,6 +2036,146 @@ function procesarCierre(){
   persistDBSoon();
   closeOv("ov-cierre");
   if(currentSub[currentMod]==="caja-cierre")renderCajaCierre();
+}
+
+/* ══════════════════════════════════════════
+   MOVIMIENTOS — EDITAR / ELIMINAR
+══════════════════════════════════════════ */
+
+// Inyectar modal de edición en el DOM (solo una vez, al cargar)
+(function _inyectarModalEditarMov() {
+  if (document.getElementById("ov-editar-mov")) return;
+  const div = document.createElement("div");
+  div.innerHTML = `
+  <div class="ov" id="ov-editar-mov">
+    <div class="ov-card" style="max-width:440px;">
+      <div class="ov-header">
+        <div class="ov-title">Editar movimiento</div>
+        <button class="ov-close" onclick="closeOv('ov-editar-mov')"><i class="ti ti-x"></i></button>
+      </div>
+      <input type="hidden" id="emov-id" />
+      <div class="fg">
+        <label>Monto</label>
+        <input type="number" id="emov-monto" min="1" placeholder="0" />
+      </div>
+      <div class="fg">
+        <label>Tipo</label>
+        <select id="emov-signo">
+          <option value="1">Ingreso (+)</option>
+          <option value="-1">Egreso (−)</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Método de pago</label>
+        <select id="emov-medio">
+          <option value="efectivo">Efectivo</option>
+          <option value="mercadopago">Mercado Pago</option>
+          <option value="debito">Débito</option>
+          <option value="credito">Crédito</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Observaciones / concepto</label>
+        <input type="text" id="emov-concepto" placeholder="Descripción del movimiento" />
+      </div>
+      <div class="fg">
+        <label>Fecha</label>
+        <input type="date" id="emov-fecha" />
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="btn btn-out" style="flex:1;justify-content:center;" onclick="closeOv('ov-editar-mov')">Cancelar</button>
+        <button class="btn btn-ng" style="flex:1;justify-content:center;" onclick="_confirmarEdicionMovimiento()"><i class="ti ti-check"></i>Guardar cambios</button>
+      </div>
+    </div>
+  </div>`;
+  document.addEventListener("DOMContentLoaded", () => document.body.appendChild(div.firstElementChild));
+  // Por si el DOM ya cargó (script diferido)
+  if (document.readyState !== "loading") document.body.appendChild(div.firstElementChild);
+})();
+
+function eliminarMovimiento(movimientoId) {
+  const idx = DB.movimientos.findIndex(m => m.id === movimientoId);
+  if (idx === -1) { alert("Movimiento no encontrado"); return; }
+  if (!confirm("¿Eliminar este movimiento?")) return;
+
+  const mov = DB.movimientos[idx];
+
+  // Revertir efecto en caja (signo:1 sumó → restamos; signo:-1 restó → sumamos)
+  if (mov.caja && DB.cajas[mov.caja] && mov.medio && DB.cajas[mov.caja][mov.medio] !== undefined) {
+    DB.cajas[mov.caja][mov.medio] -= mov.signo * mov.monto;
+  }
+
+  DB.movimientos.splice(idx, 1);
+  persistDBSoon();
+  renderSidebar();
+
+  const sub = currentSub[currentMod];
+  if (sub === "caja-movimientos") renderCajaMovimientos();
+  else if (sub === "caja-resumen") renderCajaResumen();
+}
+
+function editarMovimiento(movimientoId) {
+  const mov = DB.movimientos.find(m => m.id === movimientoId);
+  if (!mov) { alert("Movimiento no encontrado"); return; }
+
+  document.getElementById("emov-id").value       = mov.id;
+  document.getElementById("emov-monto").value    = mov.monto;
+  document.getElementById("emov-signo").value    = mov.signo > 0 ? "1" : "-1";
+  document.getElementById("emov-medio").value    = mov.medio || "efectivo";
+  document.getElementById("emov-concepto").value = mov.concepto || "";
+  document.getElementById("emov-fecha").value    = mov.fechaISO || toDateInput();
+
+  openOv("ov-editar-mov");
+}
+
+function guardarEdicionMovimiento(movimientoId, datosEditados) {
+  const idx = DB.movimientos.findIndex(m => m.id === movimientoId);
+  if (idx === -1) { alert("Movimiento no encontrado"); return; }
+
+  const { monto, signo, medio, concepto, fechaISO } = datosEditados;
+  if (!monto || monto <= 0) { alert("El monto debe ser mayor a cero"); return; }
+
+  const mov = DB.movimientos[idx];
+
+  // Revertir efecto anterior en caja
+  if (mov.caja && DB.cajas[mov.caja] && DB.cajas[mov.caja][mov.medio] !== undefined) {
+    DB.cajas[mov.caja][mov.medio] -= mov.signo * mov.monto;
+  }
+
+  const nuevoSigno = parseInt(signo, 10);
+  Object.assign(mov, {
+    monto,
+    signo: nuevoSigno,
+    medio,
+    concepto,
+    fechaISO,
+    fecha: shortFromISO(fechaISO),
+    editado_en: new Date().toISOString()
+  });
+
+  // Aplicar nuevo efecto en caja
+  if (mov.caja && DB.cajas[mov.caja] && DB.cajas[mov.caja][medio] !== undefined) {
+    DB.cajas[mov.caja][medio] += nuevoSigno * monto;
+  }
+
+  persistDBSoon();
+  closeOv("ov-editar-mov");
+  renderSidebar();
+
+  const sub = currentSub[currentMod];
+  if (sub === "caja-movimientos") renderCajaMovimientos();
+  else if (sub === "caja-resumen") renderCajaResumen();
+}
+
+// Lee el formulario del modal y delega en guardarEdicionMovimiento
+function _confirmarEdicionMovimiento() {
+  const id       = parseInt(document.getElementById("emov-id").value, 10);
+  const monto    = parseFloat(document.getElementById("emov-monto").value) || 0;
+  const signo    = document.getElementById("emov-signo").value;
+  const medio    = document.getElementById("emov-medio").value;
+  const concepto = document.getElementById("emov-concepto").value.trim();
+  const fechaISO = document.getElementById("emov-fecha").value || toDateInput();
+  guardarEdicionMovimiento(id, { monto, signo, medio, concepto, fechaISO });
 }
 
 /* ══════════════════════════════════════════
