@@ -7,7 +7,7 @@ Sistema web de gestion para tienda de ropa.
 - `index.html`: estructura de la app y modales globales.
 - `styles.css`: estilos visuales y layout.
 - `app.js`: datos demo, navegacion y logica de negocio en frontend.
-- `config.js`: configuracion local segura. Por defecto esta vacia y no conecta a Supabase.
+- `config.js`: configuracion por host. En localhost no conecta a Supabase; en produccion usa Supabase.
 - `config.example.js`: ejemplo para conectar Supabase en un entorno privado.
 - `data/local-demo.js`: base demo ficticia para probar localmente.
 - `supabase.sql`: tabla y politicas RLS para la base compartida.
@@ -22,7 +22,7 @@ python3 -m http.server 8080
 
 Luego abrir `http://localhost:8080/`.
 
-Con la configuracion actual (`window.LUNAMIA_CONFIG = {}`), la app usa solo la base demo ficticia de `data/local-demo.js`. Los cambios que hagas en la prueba viven en memoria del navegador y se pierden al recargar.
+Con `http://localhost` o `http://127.0.0.1`, `config.js` deja la configuracion vacia y la app usa solo la base demo ficticia de `data/local-demo.js`. Los cambios que hagas en la prueba viven en memoria del navegador y se pierden al recargar.
 
 Flujos rapidos para probar:
 
@@ -38,13 +38,12 @@ Para GitHub Pages, subir estos archivos al repositorio y configurar Pages desde 
 
 ## Supabase
 
-No publiques credenciales reales en este repositorio publico. Para un entorno privado:
+La app publicada usa la URL y publishable key de Supabase definidas en `config.js`. Esa clave no es una clave secreta, pero la seguridad depende de tener RLS activo y de permitir solo usuarios autorizados.
 
-1. Copiar `config.example.js` a `config.js`.
-2. Completar `SUPABASE_URL` y `SUPABASE_ANON_KEY` en ese entorno privado.
-3. Ejecutar `supabase.sql` una vez desde Supabase SQL Editor.
-4. Crear usuarios autorizados en `Authentication > Users`.
-5. Mantener deshabilitado el registro publico salvo que las politicas RLS limiten por usuario.
+1. Ejecutar `supabase.sql` una vez desde Supabase SQL Editor.
+2. Crear usuarios autorizados en `Authentication > Users`.
+3. Mantener deshabilitado el registro publico salvo que las politicas RLS limiten por usuario.
+4. No publicar service role keys ni claves privadas en este repositorio.
 
 La primera vez que un usuario autenticado abra la app, si `app_state.data` esta vacio, se guardaran los datos iniciales cargados por la pagina. Evita conectar Supabase de produccion mientras `data/local-demo.js` este activo si no queres sembrar datos demo.
 
