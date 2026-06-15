@@ -116,7 +116,7 @@ function procesarGrupoConjunto(grupo, conjuntoId, productosGlobales) {
 
   // 4. Calcular cantidad de conjuntos posibles
   const cantidades = tipos.map(tipo => {
-    const totalCantidad = tiposMap[tipo].reduce((sum, p) => sum + (p.cantidad || 1), 0);
+    const totalCantidad = tiposMap[tipo].reduce((sum, p) => sum + (p.cantidad ?? p.qty ?? 1), 0);
     return totalCantidad;
   });
 
@@ -140,7 +140,7 @@ function procesarGrupoConjunto(grupo, conjuntoId, productosGlobales) {
     let cantidadRestante = conjuntosFormables;
 
     productosDelTipo.forEach(prod => {
-      const cantProd = prod.cantidad || 1;
+      const cantProd = prod.cantidad ?? prod.qty ?? 1;
       const cantDescuentada = Math.min(cantProd, cantidadRestante);
 
       if (cantDescuentada > 0) {
@@ -209,7 +209,7 @@ function obtenerResumenConjuntos(productos) {
       if (!conjuntos[cId].tipos.includes(prod.tipoConjunto)) {
         conjuntos[cId].tipos.push(prod.tipoConjunto);
       }
-      conjuntos[cId].cantidad += (prod.cantidad || 1);
+      conjuntos[cId].cantidad += (prod.cantidad ?? prod.qty ?? 1);
     }
   });
 
@@ -275,6 +275,7 @@ function generarDescripcionDescuentos(detalles) {
 
   return detalles.map(d => {
     const tipos = d.tipos.join(" + ");
-    return `${tipos}: ${d.conjuntosAplicados} conjunto${d.conjuntosAplicados > 1 ? 's' : ''} (${formatearMoney(d.montoDescuento)})`;
+    const money = typeof formatearMoney === "function" ? formatearMoney : (typeof fmt === "function" ? fmt : n => "$"+Math.round(n));
+    return `${tipos}: ${d.conjuntosAplicados} conjunto${d.conjuntosAplicados > 1 ? 's' : ''} (${money(d.montoDescuento)})`;
   }).join(" | ");
 }

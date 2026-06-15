@@ -158,7 +158,7 @@
         <div class="fg"><label>Tipo / modelo</label><input type="text" id="np-tipo" placeholder="Ej: térmica, lino, baggy" oninput="actualizarCodigoPrev()" /></div>
       </div>
       <div class="fg2">
-        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option></select></div>
+        <div class="fg"><label>Género</label><select id="np-gen" onchange="actualizarCodigoPrev()"><option value="">Seleccioná</option><option value="DAM">Dama</option><option value="CAB">Caballero</option><option value="UNI">Unisex</option></select></div>
         <div class="fg"><label>Proveedor</label><select id="np-prov"><option value="">Sin proveedor</option></select></div>
       </div>
       <div style="background:var(--azbg);border-radius:8px;padding:10px 12px;border:0.5px solid var(--azbr);">
@@ -182,12 +182,18 @@
         <div style="text-align:right;"><div class="pc-label">Ganancia estimada</div><div style="font-size:14px;color:var(--gc);" id="np-gan-est">$—</div></div>
       </div>
       <div class="fg"><label>Precio final (editable)</label><input type="number" id="np-precio-edit" placeholder="Se completa automático"/></div>
-      <div class="hint">Redondeo psicológico aplicado (ej: 42.000 → 41.990)</div>
+      <div class="hint">Redondeo hacia abajo a $500/$1.000 (ej: 82.080 → 82.000; 82.700 → 82.500)</div>
     </div>
     <div class="mtp" id="ptp-2">
-      <div class="fg" style="margin-bottom:10px;"><div class="sect-title">Colores</div><div class="tag-strip" id="np-colores"></div></div>
+      <div class="tag-strip" id="np-colores" style="display:none;"></div>
       <div class="fg" style="margin-bottom:14px;">
         <div class="sect-title" style="margin-bottom:10px;">Talles</div>
+        <div style="margin-bottom:11px;">
+          <div style="font-size:10px;font-weight:600;color:var(--gt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Especial</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <label class="talle-btn"><input type="checkbox" value="Único" onchange="syncTallesStrip()"/><span>Único</span></label>
+          </div>
+        </div>
 
         <div style="margin-bottom:11px;">
           <div style="font-size:10px;font-weight:600;color:var(--gt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px;">Numéricos</div>
@@ -232,6 +238,7 @@
             <label class="talle-btn"><input type="checkbox" value="50" onchange="syncTallesStrip()"/><span>50</span></label>
             <label class="talle-btn"><input type="checkbox" value="52" onchange="syncTallesStrip()"/><span>52</span></label>
             <label class="talle-btn"><input type="checkbox" value="54" onchange="syncTallesStrip()"/><span>54</span></label>
+            <label class="talle-btn"><input type="checkbox" value="56" onchange="syncTallesStrip()"/><span>56</span></label>
           </div>
         </div>
 
@@ -246,7 +253,11 @@
       <button class="btn btn-out btn-sm" onclick="agregarVarManual()"><i class="ti ti-plus"></i>Agregar manual</button>
     </div>
   </div>
-  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-nuevo-prod')">Cancelar</button><button class="btn btn-ng" onclick="guardarProducto()"><i class="ti ti-check"></i>Guardar producto</button></div>
+  <div class="mf">
+    <button class="btn btn-out" onclick="closeOv('ov-nuevo-prod')">Cancelar</button>
+    <button class="btn btn-out" onclick="guardarProducto(true)"><i class="ti ti-plus"></i>Guardar y cargar otro</button>
+    <button class="btn btn-ng" onclick="guardarProducto(false)"><i class="ti ti-check"></i>Guardar producto</button>
+  </div>
 </div>
 </div>
 
@@ -285,7 +296,7 @@
       <div class="notif notif-az" style="margin-bottom:10px;"><i class="ti ti-info-circle" style="flex-shrink:0;"></i>Stock y costos se actualizan al confirmar.</div>
       <div class="ing-var-head"><span>Variante</span><span>Stock</span><span>Cantidad</span><span>Costo unit.</span><span></span></div>
       <div id="ing-var-rows"></div>
-      <button class="btn btn-out btn-sm" onclick="addIngVarRow()" style="margin-top:6px;"><i class="ti ti-plus"></i>Agregar producto</button>
+      <button class="btn btn-out btn-sm" onclick="addIngVarRow()" style="margin-top:6px;"><i class="ti ti-search"></i>Buscar otro producto</button>
     </div>
     <div class="mtp" id="itp-2">
       <div style="background:var(--crd);border-radius:9px;padding:12px 14px;margin-bottom:12px;">
@@ -294,7 +305,7 @@
       </div>
       <div class="fg2">
         <div class="fg"><label>Total factura</label><input type="number" id="ing-total-factura" placeholder="$0"/></div>
-        <div class="fg"><label>Método de pago</label><select id="ing-metodo"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia / MP</option><option value="cuenta_prov">Cuenta proveedor</option></select></div>
+        <div class="fg"><label>Método de pago</label><select id="ing-metodo" onchange="calcIngPago()"><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago / transferencia</option><option value="cuenta_prov">Cuenta proveedor</option></select></div>
       </div>
       <div class="fg"><label>Caja afectada</label><select id="ing-caja"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
       <div class="notif notif-am" id="ing-aviso-cc" style="display:none;"><i class="ti ti-alert-triangle" style="flex-shrink:0;"></i>Cuenta corriente proveedor: no se descuenta de caja ahora.</div>
@@ -385,9 +396,10 @@
   <div class="mh"><span class="mt"><i class="ti ti-arrows-exchange" style="margin-right:7px;"></i>Transferir entre cajas</span><button class="btn-ghost" onclick="closeOv('ov-transf-cajas')"><i class="ti ti-x"></i></button></div>
   <div class="mc">
     <div class="fg2">
-      <div class="fg"><label>Origen</label><select id="tr-origen"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
-      <div class="fg"><label>Destino</label><select id="tr-destino"><option value="reinversion">Caja reinversión</option><option value="principal">Caja principal</option></select></div>
+      <div class="fg"><label>Origen</label><select id="tr-origen" onchange="recalcTransf()"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
+      <div class="fg"><label>Destino</label><select id="tr-destino" onchange="recalcTransf()"><option value="reinversion">Caja reinversión</option><option value="principal">Caja principal</option></select></div>
     </div>
+    <div class="fg"><label>Origen del dinero</label><select id="tr-medio" onchange="recalcTransf()"><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option></select></div>
     <div class="fg2">
       <div class="fg"><label>Monto</label><input type="number" id="tr-monto" placeholder="$0" oninput="recalcTransf()"/></div>
       <div class="fg"><label>Fecha</label><input type="date" id="tr-fecha"/></div>
@@ -473,6 +485,7 @@ function syncTallesStrip() {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
+<script src="data/local-demo.js"></script>
 <script src="data/import-summary.js"></script>
 <script src="app.js"></script>
 <script src="descuentos-conjuntos.js"></script>
