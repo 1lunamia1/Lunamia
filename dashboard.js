@@ -131,6 +131,7 @@ function actualizarEstadoDatos(){
   const synced = typeof remoteReady !== "undefined" && remoteReady;
   const source = db.meta?.fuente || "Base existente";
   const expectedSource = initial?.meta?.fuente || summary?.fuente || "Excel";
+  const demoLocal = !supabaseOn && /demo local/i.test(`${source} ${expectedSource}`);
   const badge = document.getElementById("dash-data-badge");
   const msg = document.getElementById("dash-data-message");
   const importBtn = document.getElementById("dash-data-import-btn");
@@ -143,7 +144,11 @@ function actualizarEstadoDatos(){
   document.getElementById("dash-data-movimientos").textContent = conteoDB(db,"movimientos");
   document.getElementById("dash-data-sync").textContent = supabaseOn ? (synced ? "Conectado" : "Pendiente") : "Local";
 
-  if(matchExcel && supabaseOn && synced){
+  if(demoLocal){
+    badge.textContent = "Demo local";
+    badge.className = "data-badge ok";
+    msg.textContent = "La app está usando datos ficticios para pruebas locales. Supabase está desactivado y no se leen ni escriben datos reales.";
+  }else if(matchExcel && supabaseOn && synced){
     badge.textContent = "Excel sincronizado";
     badge.className = "data-badge ok";
     msg.textContent = `La app está usando los datos importados de ${expectedSource} y la base está conectada a Supabase.`;
@@ -224,16 +229,17 @@ function cargarUltimasVentas() {
 function eliminarVenta(idVenta) {
   if (!confirm('¿Confirmas que deseas eliminar esta venta?')) return;
   
-  const db = typeof DB !== "undefined" ? DB : null;
-  if (!db) return;
-  
-  const venta = db.ventas.find(v => v.id === idVenta);
-  if (venta) {
-    venta.eliminada = true;
+  if (typeof eliminarVentaPorId === "function") {
+    eliminarVentaPorId(idVenta);
+  } else {
+    const db = typeof DB !== "undefined" ? DB : null;
+    if (!db) return;
+    const venta = db.ventas.find(v => v.id === idVenta);
+    if (venta) venta.eliminada = true;
     persistDBSoon();
-    cargarUltimasVentas();
-    actualizarDashboard();
   }
+  cargarUltimasVentas();
+  actualizarDashboard();
 }
 
 // Eliminar devolución desde módulo de devoluciones

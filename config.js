@@ -1,4 +1,3 @@
-window.LUNAMIA_CONFIG = {
-  SUPABASE_URL: "https://sgzofcolsmqjrzyzjchl.supabase.co",
-  SUPABASE_ANON_KEY: "sb_publishable_KGeHXe8FEPVHyFYjYEqWsQ_W89bpBWq",
-};
+// Configuracion local segura.
+// Dejar vacio mantiene la app en modo Local y evita leer/escribir Supabase.
+window.LUNAMIA_CONFIG = {};

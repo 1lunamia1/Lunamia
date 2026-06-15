@@ -1,2 +1,5 @@
 Luna Mia.xlsx
 data/import-data.js
+config.production.js
+.playwright-cli/
+output/
