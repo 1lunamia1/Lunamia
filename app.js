@@ -62,6 +62,9 @@ function isValidDB(data){
 function isDemoDB(data){
   return data && Array.isArray(data.productos) && data.productos.length===10 && data.productos.some(p=>p.nombre==="Jean Baggy Tokio");
 }
+function isMissingVersionColumn(error){
+  return error?.code==="42703" && /app_state\.version|column .*version/i.test(error.message||"");
+}
 
 function setSyncStatus(text){
   const el=document.getElementById("sync-status");
@@ -125,32 +128,59 @@ async function logoutSupabase(){
 
 async function loadRemoteDB(){
   setSyncStatus("Cargando datos...");
-  const {data,error}=await sbClient.from("app_state").select("data,version").eq("id","main").single();
+  let {data,error}=await sbClient.from("app_state").select("data,version").eq("id","main").single();
+  if(error&&isMissingVersionColumn(error)){
+    console.warn("Supabase app_state.version no existe. Ejecutá supabase.sql para activar control de conflictos.");
+    const fallback=await sbClient.from("app_state").select("data").eq("id","main").single();
+    data=fallback.data;
+    error=fallback.error;
+    remoteVersion=null;
+  }else{
+    remoteVersion=Number(data?.version)||1;
+  }
   if(error)throw error;
-  remoteVersion=Number(data?.version)||1;
   if(isValidDB(data?.data) && !isDemoDB(data.data)){
     DB=data.data;
     safeDB();
   }else{
     safeDB();
-    const nextVersion=remoteVersion+1;
-    const {data:updateData,error:updateError}=await sbClient.from("app_state")
-      .update({data:DB,updated_at:new Date().toISOString(),version:nextVersion})
-      .eq("id","main")
-      .eq("version",remoteVersion)
-      .select("version")
-      .single();
-    if(updateError)throw updateError;
-    remoteVersion=Number(updateData?.version)||nextVersion;
+    if(remoteVersion===null){
+      const {error:updateError}=await sbClient.from("app_state")
+        .update({data:DB,updated_at:new Date().toISOString()})
+        .eq("id","main");
+      if(updateError)throw updateError;
+    }else{
+      const nextVersion=remoteVersion+1;
+      const {data:updateData,error:updateError}=await sbClient.from("app_state")
+        .update({data:DB,updated_at:new Date().toISOString(),version:nextVersion})
+        .eq("id","main")
+        .eq("version",remoteVersion)
+        .select("version")
+        .single();
+      if(updateError)throw updateError;
+      remoteVersion=Number(updateData?.version)||nextVersion;
+    }
   }
   remoteReady=true;
-  setSyncStatus("Sincronizado");
+  setSyncStatus(remoteVersion===null?"Sincronizado*":"Sincronizado");
 }
 
 async function saveRemoteDB(){
   if(!SUPABASE_ON || !sbClient || !remoteReady)return;
   safeDB();
   setSyncStatus("Guardando...");
+  if(remoteVersion===null){
+    const {error}=await sbClient.from("app_state")
+      .update({data:DB,updated_at:new Date().toISOString()})
+      .eq("id","main");
+    if(error){
+      console.error(error);
+      setSyncStatus("Error al guardar");
+      return;
+    }
+    setSyncStatus("Sincronizado*");
+    return;
+  }
   const currentVersion=Number(remoteVersion)||1;
   const nextVersion=currentVersion+1;
   const {data,error}=await sbClient.from("app_state")
