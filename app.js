@@ -17,6 +17,35 @@ function emptyDB(){
 function cloneData(data){return JSON.parse(JSON.stringify(data));}
 let DB = cloneData(window.LUNAMIA_INITIAL_DB || emptyDB());
 
+function cleanPlainText(value){
+  return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g,"").replace(/[<>]/g,"").trim();
+}
+function escapeHTML(value){
+  const map={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+  return String(value ?? "").replace(/[&<>"']/g,ch=>map[ch]);
+}
+function jsAttrString(value){
+  return escapeHTML(JSON.stringify(String(value ?? "")).replace(/</g,"\\u003C").replace(/>/g,"\\u003E").replace(/&/g,"\\u0026"));
+}
+function sanitizeDBStrings(value, seen=new WeakSet()){
+  if(value==null)return value;
+  if(typeof value==="string")return value.replace(/[\u0000-\u001F\u007F]/g,"").replace(/[<>]/g,"");
+  if(typeof value!=="object")return value;
+  if(seen.has(value))return value;
+  seen.add(value);
+  if(Array.isArray(value)){
+    for(let i=0;i<value.length;i++)value[i]=sanitizeDBStrings(value[i],seen);
+    return value;
+  }
+  Object.keys(value).forEach(k=>{value[k]=sanitizeDBStrings(value[k],seen);});
+  return value;
+}
+function safeDB(){
+  sanitizeDBStrings(DB);
+  return DB;
+}
+safeDB();
+
 /* ── SUPABASE / PERSISTENCIA ── */
 const RAW_CONFIG = window.LUNAMIA_CONFIG || {};
 const SUPABASE_URL = (RAW_CONFIG.SUPABASE_URL || "").replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
@@ -24,6 +53,7 @@ const SUPABASE_KEY = RAW_CONFIG.SUPABASE_ANON_KEY || RAW_CONFIG.SUPABASE_PUBLISH
 const SUPABASE_ON = Boolean(SUPABASE_URL && SUPABASE_KEY);
 let sbClient = null;
 let remoteReady = false;
+let remoteVersion = null;
 let saveTimer = null;
 
 function isValidDB(data){
@@ -95,13 +125,23 @@ async function logoutSupabase(){
 
 async function loadRemoteDB(){
   setSyncStatus("Cargando datos...");
-  const {data,error}=await sbClient.from("app_state").select("data").eq("id","main").single();
+  const {data,error}=await sbClient.from("app_state").select("data,version").eq("id","main").single();
   if(error)throw error;
+  remoteVersion=Number(data?.version)||1;
   if(isValidDB(data?.data) && !isDemoDB(data.data)){
     DB=data.data;
+    safeDB();
   }else{
-    const {error:updateError}=await sbClient.from("app_state").update({data:DB,updated_at:new Date().toISOString()}).eq("id","main");
+    safeDB();
+    const nextVersion=remoteVersion+1;
+    const {data:updateData,error:updateError}=await sbClient.from("app_state")
+      .update({data:DB,updated_at:new Date().toISOString(),version:nextVersion})
+      .eq("id","main")
+      .eq("version",remoteVersion)
+      .select("version")
+      .single();
     if(updateError)throw updateError;
+    remoteVersion=Number(updateData?.version)||nextVersion;
   }
   remoteReady=true;
   setSyncStatus("Sincronizado");
@@ -109,17 +149,33 @@ async function loadRemoteDB(){
 
 async function saveRemoteDB(){
   if(!SUPABASE_ON || !sbClient || !remoteReady)return;
+  safeDB();
   setSyncStatus("Guardando...");
-  const {error}=await sbClient.from("app_state").update({data:DB,updated_at:new Date().toISOString()}).eq("id","main");
+  const currentVersion=Number(remoteVersion)||1;
+  const nextVersion=currentVersion+1;
+  const {data,error}=await sbClient.from("app_state")
+    .update({data:DB,updated_at:new Date().toISOString(),version:nextVersion})
+    .eq("id","main")
+    .eq("version",currentVersion)
+    .select("version")
+    .maybeSingle();
   if(error){
     console.error(error);
     setSyncStatus("Error al guardar");
     return;
   }
+  if(!data){
+    remoteReady=false;
+    setSyncStatus("Conflicto de datos");
+    alert("No se guardó porque la base fue modificada desde otra sesión. Recargá la app para traer la última versión antes de seguir editando.");
+    return;
+  }
+  remoteVersion=Number(data.version)||nextVersion;
   setSyncStatus("Sincronizado");
 }
 
 function persistDBSoon(){
+  safeDB();
   if(!remoteReady)return;
   clearTimeout(saveTimer);
   saveTimer=setTimeout(saveRemoteDB,350);
@@ -129,6 +185,7 @@ async function importarExcelInicial(){
   if(!window.LUNAMIA_INITIAL_DB){alert("No se encontró el archivo de importación.");return;}
   if(!confirm("Esto reemplazará los datos actuales por los datos importados del Excel. ¿Continuar?"))return;
   DB=cloneData(window.LUNAMIA_INITIAL_DB);
+  safeDB();
   if(SUPABASE_ON&&sbClient&&remoteReady)await saveRemoteDB();
   renderSidebar();
   navMod("dashboard");
@@ -162,7 +219,7 @@ async function initApp(){
   sbClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{
     auth:{
       persistSession:true,
-      autoRefreshToken:false,
+      autoRefreshToken:true,
       storage:window.sessionStorage
     }
   });
@@ -180,7 +237,7 @@ const fmt=n=>"$"+Math.round(n).toLocaleString("es-AR");
 const fmtDiff=n=>n===0?`<span style="color:var(--vd);font-weight:500">Sin diferencia</span>`:n>0?`<span style="color:var(--vd);font-weight:500">Sobrante ${fmt(n)}</span>`:`<span style="color:var(--rj);font-weight:500">Faltante ${fmt(Math.abs(n))}</span>`;
 function today(){const d=new Date();return`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;}
 function todayShort(){return today().substring(0,5);}
-function toDateInput(){return new Date().toISOString().split("T")[0];}
+function toDateInput(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function shortFromISO(iso){if(!iso)return todayShort();const p=iso.split("-");return p.length===3?`${p[2]}/${p[1]}`:todayShort();}
 function hora(){const d=new Date();return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
 function initials(n){return n.split(" ").map(x=>x[0]).join("").substring(0,2).toUpperCase();}
@@ -612,7 +669,7 @@ function editarCategoria(id){
   openOv("ov-categoria");
 }
 function guardarCategoria(){
-  const nombre=document.getElementById("cat-nombre").value.trim();
+  const nombre=cleanPlainText(document.getElementById("cat-nombre").value);
   const codigo=document.getElementById("cat-codigo").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
   if(!nombre||!codigo){alert("Completá nombre y código.");return;}
   if(!DB.categorias)DB.categorias=[];
@@ -869,15 +926,15 @@ function eliminarProducto(id){
   renderProdLista();renderSidebar();
 }
 function guardarProducto(cargarOtro=false){
-  const nombre=document.getElementById("np-nombre").value.trim();
-  const marca=document.getElementById("np-marca").value.trim();
-  const tipo=document.getElementById("np-tipo").value.trim();
+  const nombre=cleanPlainText(document.getElementById("np-nombre").value);
+  const marca=cleanPlainText(document.getElementById("np-marca").value);
+  const tipo=cleanPlainText(document.getElementById("np-tipo").value);
   const catKey=document.getElementById("np-cat").value;
   const genKey=document.getElementById("np-gen").value;
   if(!nombre||!catKey||!genKey){alert("Completá nombre, categoría y género.");return;}
   const catText=categoriaNombre(catKey);const genText=GEN_MAP[genKey];
   const num=(DB.productos.filter(p=>p.cat===catText).length+1).toString().padStart(3,"0");
-  const codigo=(document.getElementById("np-codigo-edit").value.trim().toUpperCase()||`${catKey}-${genKey}-${num}`);
+  const codigo=(document.getElementById("np-codigo-edit").value.trim().toUpperCase().replace(/[^A-Z0-9-]/g,"")||`${catKey}-${genKey}-${num}`);
   if(DB.productos.some(p=>p.codigo===codigo&&p.id!==editingProductId)){alert("Ya existe otro producto con ese código.");return;}
   const precio=parseFloat(document.getElementById("np-precio-edit").value)||0;
   const costo=parseFloat(document.getElementById("np-costo").value)||0;
@@ -1011,7 +1068,7 @@ function confirmarIngreso(){
   });
   if(metodo!=="cuenta_prov"&&medio){DB.cajas[caja][medio]=Math.max(0,(DB.cajas[caja][medio]||0)-total);}
   const newId=nextId(DB.proveedores.flatMap(p=>p.compras));
-  prov.compras.unshift({id:newId,fecha,fechaISO,remito:document.getElementById("ing-remito").value||"",items:items.map(r=>({cod:r.cod,nombre:`${r.prodNombre} · ${varianteLabel(r)}`,cant:r.cantIngreso,costo:r.nuevoCosto})),total,metodo,caja,uds:items.reduce((a,r)=>a+r.cantIngreso,0)});
+  prov.compras.unshift({id:newId,fecha,fechaISO,remito:cleanPlainText(document.getElementById("ing-remito").value),items:items.map(r=>({cod:r.cod,nombre:`${r.prodNombre} · ${varianteLabel(r)}`,cant:r.cantIngreso,costo:r.nuevoCosto})),total,metodo,caja,uds:items.reduce((a,r)=>a+r.cantIngreso,0)});
   if(metodo!=="cuenta_prov")DB.movimientos.unshift({id:nextId(DB.movimientos),fecha,fechaISO,hora:hora(),tipo:"gasto",concepto:`Compra a ${prov.nombre}`,caja,medio,monto:total,signo:-1});
   persistDBSoon();
   closeOv("ov-ingreso-merch");
@@ -1044,7 +1101,7 @@ function renderPDV(){
             placeholder="Buscar por nombre o código..."
             style="padding-left:38px;height:42px;font-size:14px;border-radius:9px;"
             oninput="pdvFiltQ=this.value;renderProdGrid()"
-            value="${pdvFiltQ}"
+            value="${escapeHTML(pdvFiltQ)}"
             id="pdv-search-input"
           />
         </div>
@@ -1053,7 +1110,7 @@ function renderPDV(){
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center;">
           <span style="font-size:10px;color:var(--gc);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-right:2px;">Categoría</span>
           <button class="btn-ghost btn-sm${!pdvFiltCat?" pdv-filt-on":""}" onclick="pdvFiltCat='';renderProdGrid()">Todas</button>
-          ${categoriasDisponibles().map(c=>`<button class="btn-ghost btn-sm${(pdvFiltCat||"").toLowerCase()===c.nombre.toLowerCase()?" pdv-filt-on":""}" onclick="pdvFiltCat='${c.nombre}';renderProdGrid()">${c.nombre}</button>`).join("")}
+          ${categoriasDisponibles().map(c=>`<button class="btn-ghost btn-sm${(pdvFiltCat||"").toLowerCase()===c.nombre.toLowerCase()?" pdv-filt-on":""}" onclick="pdvFiltCat=${jsAttrString(c.nombre)};renderProdGrid()">${escapeHTML(c.nombre)}</button>`).join("")}
           <div style="width:1px;height:18px;background:var(--crb);margin:0 4px;"></div>
           <button class="btn-ghost btn-sm${!pdvFiltGen?" pdv-filt-on":""}" onclick="pdvFiltGen='';renderProdGrid()">Todos</button>
           <button class="btn-ghost btn-sm${pdvFiltGen==="Dama"?" pdv-filt-on":""}" onclick="pdvFiltGen='Dama';renderProdGrid()">Dama</button>
@@ -1793,7 +1850,7 @@ function procesarVenta(){
     detallesConjuntos:cobro.detallesConjuntos,
     total,
     puntos_otorgados:Math.round(total/1000),
-    observaciones:document.getElementById("cobrar-obs")?.value||"",
+    observaciones:cleanPlainText(document.getElementById("cobrar-obs")?.value||""),
   };
   DB.ventas.unshift(venta);
   aplicarEfectosVenta(venta);
@@ -2127,11 +2184,11 @@ function editarCliente(id){
   openOv("ov-nuevo-cliente");
 }
 function guardarCliente(){
-  const nom=document.getElementById("nc-nombre").value.trim();
+  const nom=cleanPlainText(document.getElementById("nc-nombre").value);
   if(!nom)return;
-  const ape=document.getElementById("nc-apellido").value.trim();
+  const ape=cleanPlainText(document.getElementById("nc-apellido").value);
   const deuda=parseFloat(document.getElementById("nc-deuda").value)||0;
-  const payload={nombre:`${nom} ${ape}`.trim(),tel:document.getElementById("nc-tel").value||"—",dir:document.getElementById("nc-dir").value||"",obs:document.getElementById("nc-obs").value||"",deuda,limite:parseFloat(document.getElementById("nc-limite").value)||50000,vence:dateInputToDisplay(document.getElementById("nc-vence").value),diasPlazo:parseInt(document.getElementById("nc-dias").value)||30};
+  const payload={nombre:`${nom} ${ape}`.trim(),tel:cleanPlainText(document.getElementById("nc-tel").value)||"—",dir:cleanPlainText(document.getElementById("nc-dir").value),obs:cleanPlainText(document.getElementById("nc-obs").value),deuda,limite:parseFloat(document.getElementById("nc-limite").value)||50000,vence:dateInputToDisplay(document.getElementById("nc-vence").value),diasPlazo:parseInt(document.getElementById("nc-dias").value)||30};
   let c;
   if(editingClienteId){
     c=DB.clientes.find(x=>x.id===editingClienteId);
@@ -2184,7 +2241,7 @@ function procesarPagoCli(){
   const medio=metodoPago==="Transferencia"?"mercadopago":metodoPago==="Débito"?"debito":"efectivo";
   c.historial.unshift({fecha:todayShort(),concepto:`Pago — ${metodoPago}`,monto:m,tipo:"abono",pts:0});
   DB.cajas.principal[medio]=(DB.cajas.principal[medio]||0)+m;
-  DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),fechaISO:new Date().toISOString().slice(0,10),hora:hora(),tipo:"pago_cliente",concepto:`Cobro cta cte — ${c.nombre}`,caja:"principal",medio,monto:m,signo:1});
+  DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),fechaISO:toDateInput(),hora:hora(),tipo:"pago_cliente",concepto:`Cobro cta cte — ${c.nombre}`,caja:"principal",medio,monto:m,signo:1});
   persistDBSoon();
   closeOv("ov-pago-cliente");
   renderSidebar();
@@ -2457,7 +2514,7 @@ function guardarGasto(){
   const cat=document.getElementById("g-cat").value;
   const caja=document.getElementById("g-caja").value;
   const medio=document.getElementById("g-medio").value;
-  const desc=document.getElementById("g-desc").value;
+  const desc=cleanPlainText(document.getElementById("g-desc").value);
   DB.gastos.unshift({id:nextId(DB.gastos),fecha,fechaISO,cat,desc,caja,medio,monto:m});
   DB.cajas[caja][medio]=Math.max(0,(DB.cajas[caja][medio]||0)-m);
   DB.movimientos.unshift({id:nextId(DB.movimientos),fecha,fechaISO,hora:hora(),tipo:"gasto",concepto:cat+(desc?` — ${desc}`:""),caja,medio,monto:m,signo:-1});
@@ -2489,7 +2546,7 @@ function guardarTransferencia(){
   const de=document.getElementById("tr-destino").value;
   const medio=document.getElementById("tr-medio").value;
   const m=parseFloat(document.getElementById("tr-monto").value)||0;
-  const mo=document.getElementById("tr-motivo").value||"Transferencia";
+  const mo=cleanPlainText(document.getElementById("tr-motivo").value)||"Transferencia";
   const fechaISO=document.getElementById("tr-fecha").value||toDateInput();
   const fecha=shortFromISO(fechaISO);
   const disponible=DB.cajas[or]?.[medio]||0;
@@ -2523,7 +2580,7 @@ function procesarCierre(){
   const ef=parseFloat(document.getElementById("cierre-ef-real").value)||0;
   const mp=parseFloat(document.getElementById("cierre-mp-real").value)||0;
   DB.cierres=DB.cierres||[];
-  DB.cierres.unshift({id:nextId(DB.cierres),fecha:today(),fechaISO:new Date().toISOString().slice(0,10),hora:hora(),efectivo:ef,mercadopago:mp,obs:document.getElementById("cierre-obs").value||""});
+  DB.cierres.unshift({id:nextId(DB.cierres),fecha:today(),fechaISO:toDateInput(),hora:hora(),efectivo:ef,mercadopago:mp,obs:cleanPlainText(document.getElementById("cierre-obs").value)});
   persistDBSoon();
   closeOv("ov-cierre");
   if(currentSub[currentMod]==="caja-cierre")renderCajaCierre();
@@ -2664,7 +2721,7 @@ function _confirmarEdicionMovimiento() {
   const monto    = parseFloat(document.getElementById("emov-monto").value) || 0;
   const signo    = document.getElementById("emov-signo").value;
   const medio    = document.getElementById("emov-medio").value;
-  const concepto = document.getElementById("emov-concepto").value.trim();
+  const concepto = cleanPlainText(document.getElementById("emov-concepto").value);
   const fechaISO = document.getElementById("emov-fecha").value || toDateInput();
   guardarEdicionMovimiento(id, { monto, signo, medio, concepto, fechaISO });
 }
@@ -2886,8 +2943,8 @@ function abrirNuevoProv(){
   openOv("ov-nuevo-prov");
 }
 function guardarProveedor(){
-  const n=document.getElementById("newp-nombre").value.trim();if(!n)return;
-  DB.proveedores.push({id:nextId(DB.proveedores),nombre:n,rubro:document.getElementById("newp-rubro").value,tel:document.getElementById("newp-tel").value,ig:document.getElementById("newp-ig").value,dir:document.getElementById("newp-dir").value,dias:document.getElementById("newp-dias").value,obs:document.getElementById("newp-obs").value,activo:true,prodIds:[],compras:[]});
+  const n=cleanPlainText(document.getElementById("newp-nombre").value);if(!n)return;
+  DB.proveedores.push({id:nextId(DB.proveedores),nombre:n,rubro:cleanPlainText(document.getElementById("newp-rubro").value),tel:cleanPlainText(document.getElementById("newp-tel").value),ig:cleanPlainText(document.getElementById("newp-ig").value),dir:cleanPlainText(document.getElementById("newp-dir").value),dias:cleanPlainText(document.getElementById("newp-dias").value),obs:cleanPlainText(document.getElementById("newp-obs").value),activo:true,prodIds:[],compras:[]});
   persistDBSoon();
   closeOv("ov-nuevo-prov");renderProvLista();renderSidebar();
 }

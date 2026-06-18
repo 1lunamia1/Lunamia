@@ -6,8 +6,7 @@
 let editingVentaId = null;
 let ventaOriginal = null;
 let editVentaEnHistorial = false;
-let editVentaLineaEditable = false;
-let editVentaEsMultiItem = false;
+let editVentaItemsTmp = [];
 
 function moneyVenta(n) {
   if (typeof formatearMoney === "function") return formatearMoney(n);
@@ -28,12 +27,6 @@ function editarVenta(ventaId, desdeHistorial = false) {
   abrirFormularioEditarVenta(venta);
 }
 
-function detallePrincipalVenta(venta) {
-  const detalles = typeof normalizarItemsVenta === "function" ? normalizarItemsVenta(venta) : [];
-  if (detalles.length) return detalles[0];
-  return null;
-}
-
 function clienteIdDeVenta(venta) {
   if (venta.cliente_id) return venta.cliente_id;
   const c = DB.clientes.find(x => x.nombre === venta.cliente);
@@ -47,40 +40,48 @@ function metodoParaEditor(venta) {
   return pagoTipoNormalizado(venta.metodo_pago || venta.metodo || "efectivo");
 }
 
+function prepararItemsEdicion(venta) {
+  const items = normalizarItemsVenta(venta).map(it => ({ ...it }));
+  if (items.length) return items;
+  return [{
+    pid: null,
+    cod: "",
+    nombre: "Producto",
+    color: "",
+    talle: "",
+    precio: Number(venta.total)||0,
+    precio_unitario: Number(venta.total)||0,
+    cantidad: 1,
+    descuentoConjunto: 0,
+    precioFinal: null,
+    conjuntoId: null,
+    tipoConjunto: null,
+  }];
+}
+
 function abrirFormularioEditarVenta(venta) {
   crearModalEditarVenta();
   llenarSelectosEdicionVenta();
 
-  const detalles = normalizarItemsVenta(venta);
-  const detalle = detallePrincipalVenta(venta);
-  editVentaEsMultiItem = detalles.length > 1;
-  editVentaLineaEditable = Boolean(detalle?.pid && !editVentaEsMultiItem);
+  editVentaItemsTmp = prepararItemsEdicion(venta);
 
   document.getElementById("ev-venta-id").textContent = venta.id;
-  document.getElementById("ev-producto-id").value = detalle?.pid || "";
-  poblarVariantesEdicion(detalle?.pid, detalle?.cod || "");
   document.getElementById("ev-cliente-id").value = clienteIdDeVenta(venta);
   document.getElementById("ev-cliente-nombre").value = venta.cliente || "Consumidor final";
-  document.getElementById("ev-cantidad").value = detalle?.cantidad || venta.cantidad || 1;
-  document.getElementById("ev-precio").value = detalle?.precio_unitario || venta.precio_unitario || venta.total || 0;
   document.getElementById("ev-metodo-pago").value = metodoParaEditor(venta);
   document.getElementById("ev-fecha").value = fechaISOFromVenta(venta);
   document.getElementById("ev-hora").value = venta.hora || "00:00";
+  document.getElementById("ev-desc-general").value = Number(venta.descuento_general)||0;
   document.getElementById("ev-obs").value = venta.observaciones || "";
-  document.getElementById("ev-conjunto-id").value = detalle?.conjuntoId || venta.conjuntoId || "";
-  document.getElementById("ev-tipo-conjunto").value = detalle?.tipoConjunto || venta.tipoConjunto || "";
 
-  const lineFields = ["ev-producto-id","ev-variante-cod","ev-cantidad","ev-precio","ev-conjunto-id","ev-tipo-conjunto"];
-  lineFields.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !editVentaLineaEditable; });
   const info = document.getElementById("ev-linea-info");
   if (info) {
-    info.style.display = editVentaLineaEditable ? "none" : "block";
-    info.innerHTML = editVentaEsMultiItem
-      ? `<i class="ti ti-info-circle"></i> Venta con varios productos: se conserva el detalle de ítems para no alterar stock parcialmente.`
-      : `<i class="ti ti-info-circle"></i> Venta antigua sin variante identificable: se editan datos generales sin tocar stock.`;
+    info.style.display = "block";
+    info.innerHTML = `<i class="ti ti-info-circle"></i> Podés modificar productos, variantes, cantidades y precios. Al guardar se recalculan stock, caja y cuenta corriente.`;
   }
 
   mostrarInfoAuditoria(venta);
+  renderItemsEdicion();
   recalcularTotalEdicion();
   openOv("ov-editar-venta");
 }
@@ -100,40 +101,41 @@ function crearModalEditarVenta() {
   if (document.getElementById("ov-editar-venta")) return;
   const html = `
     <div class="ov" id="ov-editar-venta">
-      <div class="modal" style="max-width:640px;">
+      <div class="modal" style="max-width:820px;">
         <div class="mh">
           <span class="mt"><i class="ti ti-edit"></i> Editar venta #<span id="ev-venta-id">—</span></span>
           <button class="btn-ghost" onclick="closeOv('ov-editar-venta')"><i class="ti ti-x"></i></button>
         </div>
-        <div class="mc" style="max-height:70vh;overflow-y:auto;">
+        <div class="mc" style="max-height:72vh;overflow-y:auto;">
           <div class="notif notif-az" style="margin-bottom:15px;">
             <i class="ti ti-info-circle"></i> Los cambios se aplican también en caja, stock y cuenta corriente.
           </div>
           <div id="ev-audit-info" class="notif notif-pu" style="margin-bottom:15px;display:none;"></div>
           <div id="ev-linea-info" class="notif notif-am" style="margin-bottom:15px;display:none;"></div>
 
-          <div class="fg">
-            <label>Producto</label>
-            <select id="ev-producto-id" onchange="onEditProductoChange()"></select>
-          </div>
-          <div class="fg">
-            <label>Variante</label>
-            <select id="ev-variante-cod" onchange="recalcularTotalEdicion()"></select>
-          </div>
-
           <div class="fg2">
             <div class="fg"><label>Cliente</label><select id="ev-cliente-id" onchange="onEditClienteChange()"></select></div>
             <div class="fg"><label>O ingresar nombre</label><input type="text" id="ev-cliente-nombre" placeholder="Nombre cliente" oninput="recalcularTotalEdicion()"/></div>
           </div>
 
-          <div class="fg2">
-            <div class="fg"><label>Cantidad</label><input type="number" id="ev-cantidad" value="1" min="1" oninput="recalcularTotalEdicion()"/></div>
-            <div class="fg"><label>Precio unitario ($)</label><input type="number" id="ev-precio" value="0" min="0" step="0.01" oninput="recalcularTotalEdicion()"/></div>
-          </div>
+          <div class="sect-title" style="margin-top:4px;">Productos vendidos</div>
+          <div id="ev-items-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
+          <button class="btn btn-out btn-sm" type="button" onclick="agregarItemEditVenta()"><i class="ti ti-plus"></i>Agregar producto</button>
 
-          <div class="fg2">
-            <div class="fg"><label>ID Conjunto</label><input type="text" id="ev-conjunto-id" placeholder="ej: CONJ1" oninput="recalcularTotalEdicion()"/></div>
-            <div class="fg"><label>Tipo Conjunto</label><input type="text" id="ev-tipo-conjunto" placeholder="ej: REMERA" oninput="recalcularTotalEdicion()"/></div>
+          <div class="fg2" style="margin-top:14px;">
+            <div class="fg"><label>Descuento general (%)</label><input type="number" id="ev-desc-general" value="0" min="0" max="100" oninput="recalcularTotalEdicion()"/></div>
+            <div class="fg">
+              <label>Método de pago</label>
+              <select id="ev-metodo-pago" onchange="recalcularTotalEdicion()">
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="mercadopago">Mercado Pago</option>
+                <option value="debito">Débito</option>
+                <option value="credito">Crédito</option>
+                <option value="cuenta">Cuenta corriente</option>
+                <option value="mixto">Mixto (mantener proporción)</option>
+              </select>
+            </div>
           </div>
 
           <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:12px 14px;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;">
@@ -147,19 +149,6 @@ function crearModalEditarVenta() {
               <div style="font-size:22px;font-weight:500;" id="ev-total">$0</div>
               <div id="ev-diferencia" style="font-size:11px;color:var(--gc);margin-top:3px;"></div>
             </div>
-          </div>
-
-          <div class="fg">
-            <label>Método de pago</label>
-            <select id="ev-metodo-pago" onchange="recalcularTotalEdicion()">
-              <option value="efectivo">Efectivo</option>
-              <option value="transferencia">Transferencia</option>
-              <option value="mercadopago">Mercado Pago</option>
-              <option value="debito">Débito</option>
-              <option value="credito">Crédito</option>
-              <option value="cuenta">Cuenta corriente</option>
-              <option value="mixto">Mixto (mantener proporción)</option>
-            </select>
           </div>
 
           <div class="fg2">
@@ -184,91 +173,279 @@ function crearModalEditarVenta() {
 }
 
 function llenarSelectosEdicionVenta() {
-  const selectProducto = document.getElementById("ev-producto-id");
-  if (selectProducto) {
-    selectProducto.innerHTML = `<option value="">Seleccionar producto...</option>` + DB.productos.map(p => `<option value="${p.id}">${p.nombre} (${p.codigo})</option>`).join("");
-  }
   const selectCliente = document.getElementById("ev-cliente-id");
   if (selectCliente) {
-    selectCliente.innerHTML = `<option value="">Consumidor final</option>` + DB.clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("");
+    selectCliente.innerHTML = `<option value="">Consumidor final</option>` + DB.clientes.map(c => `<option value="${c.id}">${escapeHTML(c.nombre)}</option>`).join("");
   }
 }
 
-function poblarVariantesEdicion(productoId, selectedCod = "") {
-  const select = document.getElementById("ev-variante-cod");
-  if (!select) return;
+function productoOptions(selected = "") {
+  return `<option value="">Seleccionar producto...</option>` + DB.productos.map(p => `<option value="${p.id}"${Number(selected)===p.id?" selected":""}>${escapeHTML(p.nombre)} (${escapeHTML(p.codigo)})</option>`).join("");
+}
+
+function varianteOptions(productoId, selectedCod = "") {
   const p = DB.productos.find(x => x.id == productoId);
-  select.innerHTML = p
-    ? p.variantes.map(v => `<option value="${v.cod}"${v.cod===selectedCod?" selected":""}>${v.c} / ${v.t} · stock ${v.stock}</option>`).join("")
-    : `<option value="">Sin variante</option>`;
+  if (!p) return `<option value="">Sin variante</option>`;
+  return p.variantes.map(v => `<option value="${escapeHTML(v.cod)}"${v.cod===selectedCod?" selected":""}>${escapeHTML(varianteLabel(v))} · stock ${Number(v.stock)||0}</option>`).join("");
+}
+
+function renderItemsEdicion() {
+  const list = document.getElementById("ev-items-list");
+  if (!list) return;
+  list.innerHTML = editVentaItemsTmp.map((item, i) => {
+    const subtotal = (Number(item.cantidad)||0) * (Number(item.precio_unitario ?? item.precio)||0);
+    return `
+      <div style="border:0.5px solid var(--crb);border-radius:8px;background:var(--cr);padding:10px;">
+        <div style="display:grid;grid-template-columns:minmax(180px,1.3fr) minmax(150px,1fr) 78px 110px 28px;gap:8px;align-items:end;">
+          <div class="fg" style="margin-bottom:0;">
+            <label>Producto ${i+1}</label>
+            <select id="ev-item-prod-${i}" onchange="onEditItemProductoChange(${i})">${productoOptions(item.pid)}</select>
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>Variante</label>
+            <select id="ev-item-var-${i}" onchange="onEditItemVarianteChange(${i})">${varianteOptions(item.pid,item.cod)}</select>
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>Cant.</label>
+            <input id="ev-item-cant-${i}" type="number" min="1" value="${Number(item.cantidad)||1}" oninput="onEditItemNumeroChange(${i})"/>
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>Precio unit.</label>
+            <input id="ev-item-precio-${i}" type="number" min="0" step="0.01" value="${Number(item.precio_unitario ?? item.precio)||0}" oninput="onEditItemNumeroChange(${i})"/>
+          </div>
+          <button class="btn-icon" type="button" onclick="eliminarItemEditVenta(${i})" title="Quitar producto" style="width:28px;height:28px;color:var(--rj);"><i class="ti ti-x" style="font-size:11px;"></i></button>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11px;color:var(--gt);">
+          <span>${escapeHTML(item.nombre || "Producto")}${item.conjuntoId?` · conjunto ${escapeHTML(item.conjuntoId)}`:""}</span>
+          <strong style="color:var(--ng);font-size:12px;">${moneyVenta(subtotal)}</strong>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function syncItemDesdeDOM(i) {
+  const item = editVentaItemsTmp[i];
+  if (!item) return null;
+  const prodId = parseInt(document.getElementById(`ev-item-prod-${i}`)?.value, 10) || null;
+  const producto = DB.productos.find(p => p.id === prodId);
+  const cod = document.getElementById(`ev-item-var-${i}`)?.value || "";
+  const variante = producto?.variantes.find(v => v.cod === cod);
+  const cantidad = Math.max(1, parseFloat(document.getElementById(`ev-item-cant-${i}`)?.value)||1);
+  const precio = Math.max(0, parseFloat(document.getElementById(`ev-item-precio-${i}`)?.value)||0);
+  Object.assign(item, {
+    pid: producto?.id || null,
+    cod: variante?.cod || cod,
+    nombre: producto?.nombre || item.nombre || "Producto",
+    color: variante?.c || "",
+    talle: variante?.t || "",
+    precio,
+    precio_unitario: precio,
+    cantidad,
+    conjuntoId: producto?.conjuntoId || item.conjuntoId || null,
+    tipoConjunto: producto?.tipoConjunto || item.tipoConjunto || null,
+  });
+  return item;
+}
+
+function syncTodosItemsDesdeDOM() {
+  editVentaItemsTmp.forEach((_, i) => syncItemDesdeDOM(i));
+}
+
+function onEditItemProductoChange(i) {
+  const prodId = parseInt(document.getElementById(`ev-item-prod-${i}`).value, 10);
+  const producto = DB.productos.find(p => p.id === prodId);
+  const item = editVentaItemsTmp[i];
+  if (!item || !producto) return;
+  const variante = producto.variantes[0];
+  Object.assign(item, {
+    pid: producto.id,
+    cod: variante?.cod || "",
+    nombre: producto.nombre,
+    color: variante?.c || "",
+    talle: variante?.t || "",
+    precio: producto.precio || 0,
+    precio_unitario: producto.precio || 0,
+    conjuntoId: producto.conjuntoId || null,
+    tipoConjunto: producto.tipoConjunto || null,
+  });
+  renderItemsEdicion();
+  recalcularTotalEdicion();
+}
+
+function onEditItemVarianteChange(i) {
+  syncItemDesdeDOM(i);
+  renderItemsEdicion();
+  recalcularTotalEdicion();
+}
+
+function onEditItemNumeroChange(i) {
+  syncItemDesdeDOM(i);
+  recalcularTotalEdicion();
+}
+
+function agregarItemEditVenta() {
+  const producto = DB.productos.find(p => stockTotal(p) > 0) || DB.productos[0];
+  const variante = producto?.variantes?.[0];
+  editVentaItemsTmp.push({
+    pid: producto?.id || null,
+    cod: variante?.cod || "",
+    nombre: producto?.nombre || "Producto",
+    color: variante?.c || "",
+    talle: variante?.t || "",
+    precio: producto?.precio || 0,
+    precio_unitario: producto?.precio || 0,
+    cantidad: 1,
+    descuentoConjunto: 0,
+    precioFinal: null,
+    conjuntoId: producto?.conjuntoId || null,
+    tipoConjunto: producto?.tipoConjunto || null,
+  });
+  renderItemsEdicion();
+  recalcularTotalEdicion();
+}
+
+function eliminarItemEditVenta(i) {
+  if (editVentaItemsTmp.length <= 1) {
+    alert("La venta debe tener al menos un producto.");
+    return;
+  }
+  editVentaItemsTmp.splice(i, 1);
+  renderItemsEdicion();
+  recalcularTotalEdicion();
+}
+
+function itemsEdicionValidos() {
+  syncTodosItemsDesdeDOM();
+  const items = editVentaItemsTmp.filter(it => Number(it.cantidad)>0);
+  if (!items.length) { alert("La venta debe tener al menos un producto."); return null; }
+  for (const item of items) {
+    const producto = DB.productos.find(p => p.id === item.pid);
+    const variante = producto?.variantes.find(v => v.cod === item.cod);
+    if (!producto || !variante) {
+      alert("Revisá productos y variantes antes de guardar.");
+      return null;
+    }
+  }
+  if (!stockSuficienteParaEdicion(items)) return null;
+  return items;
+}
+
+function stockOriginalPorCodigo() {
+  return normalizarItemsVenta(ventaOriginal).reduce((acc, item) => {
+    if (item.cod) acc[item.cod] = (acc[item.cod]||0) + (Number(item.cantidad)||0);
+    return acc;
+  }, {});
+}
+
+function stockSuficienteParaEdicion(items) {
+  const original = stockOriginalPorCodigo();
+  const pedido = items.reduce((acc, item) => {
+    acc[item.cod] = (acc[item.cod]||0) + (Number(item.cantidad)||0);
+    return acc;
+  }, {});
+  for (const [cod, cant] of Object.entries(pedido)) {
+    const variante = DB.productos.flatMap(p => p.variantes).find(v => v.cod === cod);
+    const disponible = (Number(variante?.stock)||0) + (original[cod]||0);
+    if (cant > disponible) {
+      alert(`Stock insuficiente para ${cod}. Disponible para esta edición: ${disponible}.`);
+      return false;
+    }
+  }
+  return true;
+}
+
+function calcularCobroEdicion(items = null) {
+  const descGeneral = Math.max(0, Math.min(100, parseFloat(document.getElementById("ev-desc-general")?.value)||0));
+  const baseItems = (items || editVentaItemsTmp).map(item => ({
+    ...item,
+    id: item.pid,
+    cantidad: Number(item.cantidad)||1,
+    precio: Number(item.precio_unitario ?? item.precio)||0,
+    descuentoConjunto: 0,
+    precioFinal: null,
+  }));
+  const resultado = typeof aplicarDescuentoPorConjunto === "function"
+    ? aplicarDescuentoPorConjunto(baseItems)
+    : {productosConDescuento:baseItems,descuentoTotal:0,descuentoConjuntoAplicado:false,detalles:[]};
+  const detalles = resultado.productosConDescuento.map((item, i) => {
+    const original = baseItems[i] || item;
+    return {
+      pid: item.pid || item.id,
+      cod: item.cod || original.cod,
+      nombre: item.nombre || original.nombre,
+      color: item.color || original.color || "",
+      talle: item.talle || original.talle || "",
+      precio: Number(item.precio)||0,
+      precio_unitario: Number(item.precio)||0,
+      cantidad: Number(item.cantidad ?? original.cantidad)||1,
+      descuentoConjunto: Number(item.descuentoConjunto)||0,
+      precioFinal: item.precioFinal || null,
+      conjuntoId: item.conjuntoId || null,
+      tipoConjunto: item.tipoConjunto || null,
+    };
+  });
+  const subtotal = detalles.reduce((a,x)=>a+x.precio*x.cantidad,0);
+  const descuentoConjunto = Math.round(Number(resultado.descuentoTotal)||0);
+  const base = Math.max(0, subtotal-descuentoConjunto);
+  const descuentoGeneralMonto = Math.round(base*(descGeneral/100));
+  const total = Math.round(base-descuentoGeneralMonto);
+  return {subtotal,descuentoConjunto,descuentoGeneral:descGeneral,descuentoGeneralMonto,total,detalles,detallesConjuntos:resultado.detalles||[],descuentoConjuntoAplicado:descuentoConjunto>0};
 }
 
 function recalcularTotalEdicion() {
-  const totalNuevo = calcularTotalEdicion();
-  const subtotal = editVentaLineaEditable
-    ? (parseFloat(document.getElementById("ev-cantidad").value)||0) * (parseFloat(document.getElementById("ev-precio").value)||0)
-    : (ventaOriginal?.subtotal || ventaOriginal?.total || 0);
-  document.getElementById("ev-subtotal").textContent = moneyVenta(subtotal);
-  document.getElementById("ev-total").textContent = moneyVenta(totalNuevo);
-  document.getElementById("ev-descuento-info").textContent = editVentaLineaEditable ? "" : "Detalle de productos conservado";
+  syncTodosItemsDesdeDOM();
+  const cobro = calcularCobroEdicion();
+  document.getElementById("ev-subtotal").textContent = moneyVenta(cobro.subtotal);
+  document.getElementById("ev-total").textContent = moneyVenta(cobro.total);
+  const partes = [];
+  if (cobro.descuentoConjunto > 0) partes.push(`Conjunto: ${moneyVenta(cobro.descuentoConjunto)}`);
+  if (cobro.descuentoGeneralMonto > 0) partes.push(`General: ${moneyVenta(cobro.descuentoGeneralMonto)}`);
+  document.getElementById("ev-descuento-info").textContent = partes.length ? `Descuentos ${partes.join(" · ")}` : "";
 
-  const diferencia = totalNuevo - (ventaOriginal?.total || 0);
+  const diferencia = cobro.total - (ventaOriginal?.total || 0);
   const diffEl = document.getElementById("ev-diferencia");
   if (Math.abs(diferencia) > 0.01) {
     diffEl.innerHTML = `Cambio: <strong style="color:${diferencia > 0 ? '#22c55e' : '#ef4444'}">${diferencia > 0 ? '+' : ''}${moneyVenta(diferencia)}</strong>`;
   } else {
-    diffEl.innerHTML = "Sin cambios";
+    diffEl.textContent = "Sin cambios";
   }
-  detectarCambiosEdicion(totalNuevo);
+  detectarCambiosEdicion(cobro.total);
 }
 
 function calcularTotalEdicion() {
-  if (!editVentaLineaEditable) return ventaOriginal?.total || 0;
-  const cantidad = parseFloat(document.getElementById("ev-cantidad").value) || 0;
-  const precio = parseFloat(document.getElementById("ev-precio").value) || 0;
-  return Math.round(cantidad * precio);
+  return calcularCobroEdicion().total;
+}
+
+function firmaItems(items) {
+  return items.map(it => `${it.pid}|${it.cod}|${Number(it.cantidad)||0}|${Number(it.precio_unitario ?? it.precio)||0}`).join(";");
 }
 
 function detectarCambiosEdicion(totalNuevo) {
   const cambios = [];
-  const clienteNombre = document.getElementById("ev-cliente-nombre").value || "Consumidor final";
+  const clienteNombre = cleanPlainText(document.getElementById("ev-cliente-nombre").value) || "Consumidor final";
   const metodo = document.getElementById("ev-metodo-pago").value;
   const fecha = document.getElementById("ev-fecha").value;
   const horaVal = document.getElementById("ev-hora").value;
-  const obs = document.getElementById("ev-obs").value;
+  const obs = cleanPlainText(document.getElementById("ev-obs").value);
+  const actuales = editVentaItemsTmp;
+  const originales = normalizarItemsVenta(ventaOriginal);
 
   if (clienteNombre !== (ventaOriginal.cliente || "Consumidor final")) cambios.push(`Cliente: ${ventaOriginal.cliente || "Consumidor final"} -> ${clienteNombre}`);
+  if (firmaItems(actuales) !== firmaItems(originales)) cambios.push("Productos, cantidades o precios modificados");
   if (Math.abs(totalNuevo - (ventaOriginal.total || 0)) > 0.01) cambios.push(`Total: ${moneyVenta(ventaOriginal.total || 0)} -> ${moneyVenta(totalNuevo)}`);
   if (metodo !== metodoParaEditor(ventaOriginal)) cambios.push(`Método: ${ventaOriginal.metodo || ventaOriginal.metodo_pago || "—"} -> ${pagoLabel(metodo)}`);
   if (fecha !== fechaISOFromVenta(ventaOriginal)) cambios.push(`Fecha: ${ventaOriginal.fecha || "—"} -> ${fecha}`);
   if (horaVal !== (ventaOriginal.hora || "00:00")) cambios.push(`Hora: ${ventaOriginal.hora || "00:00"} -> ${horaVal}`);
   if (obs !== (ventaOriginal.observaciones || "")) cambios.push("Observaciones modificadas");
-  if (editVentaLineaEditable) {
-    const d = detallePrincipalVenta(ventaOriginal);
-    const productoId = parseInt(document.getElementById("ev-producto-id").value, 10);
-    const cantidad = parseFloat(document.getElementById("ev-cantidad").value) || 0;
-    const precio = parseFloat(document.getElementById("ev-precio").value) || 0;
-    if (productoId !== d.pid) cambios.push("Producto modificado");
-    if (cantidad !== d.cantidad) cambios.push(`Cantidad: ${d.cantidad} -> ${cantidad}`);
-    if (Math.abs(precio - d.precio_unitario) > 0.01) cambios.push(`Precio: ${moneyVenta(d.precio_unitario)} -> ${moneyVenta(precio)}`);
-  }
 
   const box = document.getElementById("ev-cambios-resumen");
   const list = document.getElementById("ev-cambios-list");
   if (cambios.length) {
     box.style.display = "block";
-    list.innerHTML = cambios.map(c => `<div style="margin-bottom:4px;">${c}</div>`).join("");
+    list.innerHTML = cambios.map(c => `<div style="margin-bottom:4px;">${escapeHTML(c)}</div>`).join("");
   } else {
     box.style.display = "none";
   }
-}
-
-function onEditProductoChange() {
-  const productoId = parseInt(document.getElementById("ev-producto-id").value, 10);
-  const producto = DB.productos.find(p => p.id === productoId);
-  poblarVariantesEdicion(productoId, "");
-  if (producto) document.getElementById("ev-precio").value = producto.precio || 0;
-  recalcularTotalEdicion();
 }
 
 function onEditClienteChange() {
@@ -297,14 +474,17 @@ function guardarCambiosVenta() {
   const ventaIdx = DB.ventas.findIndex(v => v.id === editingVentaId);
   if (ventaIdx < 0) { alert("Venta no encontrada"); return; }
 
+  const items = itemsEdicionValidos();
+  if (!items) return;
+  const cobro = calcularCobroEdicion(items);
   const clienteId = parseInt(document.getElementById("ev-cliente-id").value, 10) || null;
-  const clienteNombre = document.getElementById("ev-cliente-nombre").value || "Consumidor final";
+  const clienteNombre = cleanPlainText(document.getElementById("ev-cliente-nombre").value) || "Consumidor final";
   const fechaISO = document.getElementById("ev-fecha").value || fechaISOFromVenta(ventaOriginal);
   const metodo = document.getElementById("ev-metodo-pago").value;
-  const totalFinal = calcularTotalEdicion();
-  const pagos = pagosEditados(totalFinal, metodo, clienteId);
+  const pagos = pagosEditados(cobro.total, metodo, clienteId);
   if (!pagos) return;
 
+  const detallePrincipal = cobro.detalles[0] || {};
   const ventaActualizada = {
     ...DB.ventas[ventaIdx],
     cliente_id: clienteId,
@@ -315,48 +495,28 @@ function guardarCambiosVenta() {
     metodo: [...new Set(pagos.map(p => pagoLabel(p.tipo)))].join(" + "),
     metodo_pago: pagos.length === 1 ? pagos[0].tipo : "mixto",
     pagos,
-    total: totalFinal,
-    observaciones: document.getElementById("ev-obs").value,
+    items: describirItemsVenta(cobro.detalles),
+    items_detalle: cobro.detalles,
+    producto: detallePrincipal.pid || null,
+    variante_cod: detallePrincipal.cod || "",
+    cantidad: cobro.detalles.reduce((a,x)=>a+(Number(x.cantidad)||0),0),
+    precio_unitario: cobro.detalles.length===1 ? detallePrincipal.precio_unitario : 0,
+    subtotal: cobro.subtotal,
+    descuento_general: cobro.descuentoGeneral,
+    descuento_general_monto: cobro.descuentoGeneralMonto,
+    descuentoConjunto: cobro.descuentoConjunto,
+    descuentoConjuntoAplicado: cobro.descuentoConjuntoAplicado,
+    detallesConjuntos: cobro.detallesConjuntos,
+    total: cobro.total,
+    puntos_otorgados: Math.round(cobro.total / 1000),
+    observaciones: cleanPlainText(document.getElementById("ev-obs").value),
     editada_en: new Date().toISOString(),
     editada_por: "usuario",
     historial_cambios: [
       ...(DB.ventas[ventaIdx].historial_cambios || []),
-      { fecha:new Date().toISOString(), accion:"editada", antes:ventaOriginal, total_anterior:ventaOriginal.total, total_nuevo:totalFinal }
+      { fecha:new Date().toISOString(), accion:"editada", antes:ventaOriginal, total_anterior:ventaOriginal.total, total_nuevo:cobro.total }
     ]
   };
-
-  if (editVentaLineaEditable) {
-    const productoId = parseInt(document.getElementById("ev-producto-id").value, 10);
-    const producto = DB.productos.find(p => p.id === productoId);
-    const varianteCod = document.getElementById("ev-variante-cod").value;
-    const variante = producto?.variantes.find(v => v.cod === varianteCod);
-    if (!producto || !variante) { alert("Seleccioná producto y variante"); return; }
-    const cantidad = parseFloat(document.getElementById("ev-cantidad").value) || 1;
-    const precio = parseFloat(document.getElementById("ev-precio").value) || 0;
-    const detalle = {
-      pid: producto.id,
-      cod: variante.cod,
-      nombre: producto.nombre,
-      color: variante.c,
-      talle: variante.t,
-      precio,
-      precio_unitario: precio,
-      cantidad,
-      descuentoConjunto: 0,
-      conjuntoId: document.getElementById("ev-conjunto-id").value || null,
-      tipoConjunto: document.getElementById("ev-tipo-conjunto").value || null,
-    };
-    ventaActualizada.items_detalle = [detalle];
-    ventaActualizada.items = describirItemsVenta([detalle]);
-    ventaActualizada.producto = producto.id;
-    ventaActualizada.variante_cod = variante.cod;
-    ventaActualizada.cantidad = cantidad;
-    ventaActualizada.precio_unitario = precio;
-    ventaActualizada.subtotal = cantidad * precio;
-    ventaActualizada.descuentoConjunto = 0;
-    ventaActualizada.descuentoConjuntoAplicado = false;
-  }
-  ventaActualizada.puntos_otorgados = Math.round(totalFinal / 1000);
 
   const ventaAnterior = cloneData(DB.ventas[ventaIdx]);
   revertirEfectosVenta(ventaAnterior);
@@ -368,6 +528,7 @@ function guardarCambiosVenta() {
   closeOv("ov-editar-venta");
   editingVentaId = null;
   ventaOriginal = null;
+  editVentaItemsTmp = [];
   refrescarVistaPostVenta();
 }
 
@@ -384,6 +545,7 @@ function eliminarVentaConfirmada() {
   closeOv("ov-editar-venta");
   editingVentaId = null;
   ventaOriginal = null;
+  editVentaItemsTmp = [];
   refrescarVistaPostVenta();
 }
 

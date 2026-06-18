@@ -42,8 +42,18 @@ La app publicada usa la URL y publishable key de Supabase definidas en `config.j
 
 1. Ejecutar `supabase.sql` una vez desde Supabase SQL Editor.
 2. Crear usuarios autorizados en `Authentication > Users`.
-3. Mantener deshabilitado el registro publico salvo que las politicas RLS limiten por usuario.
-4. No publicar service role keys ni claves privadas en este repositorio.
+3. Agregar esos emails a la allowlist:
+
+```sql
+insert into app_authorized_users (email)
+values ('usuario@ejemplo.com')
+on conflict (email) do nothing;
+```
+
+4. Mantener deshabilitado el registro publico. Las politicas RLS solo permiten leer/escribir `app_state` a usuarios autenticados cuyo email este en `app_authorized_users`.
+5. No publicar service role keys ni claves privadas en este repositorio.
+
+`app_state` usa una columna `version` para evitar sobrescrituras silenciosas: si dos sesiones editan al mismo tiempo, la segunda que intente guardar verá un conflicto y deberá recargar antes de seguir.
 
 La primera vez que un usuario autenticado abra la app, si `app_state.data` esta vacio, se guardaran los datos iniciales cargados por la pagina. Evita conectar Supabase de produccion mientras `data/local-demo.js` este activo si no queres sembrar datos demo.
 
