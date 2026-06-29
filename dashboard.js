@@ -85,7 +85,7 @@ async function obtenerDatosResumen() {
   const fechaHoy = typeof todayShort === "function"
     ? todayShort()
     : new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}).replace("/", "/");
-  const ventasHoy = db.ventas.filter(v => v.fecha === fechaHoy && !v.eliminada);
+  const ventasHoy = db.ventas.filter(v => v.fecha === fechaHoy && !v.eliminada && v.estado !== "pendiente");
   return {
     ventasHoy: ventasHoy.reduce((a,v)=>a+(v.total||0),0),
     cantVentas: ventasHoy.length,

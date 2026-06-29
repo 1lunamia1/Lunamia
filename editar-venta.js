@@ -52,6 +52,8 @@ function prepararItemsEdicion(venta) {
     precio: Number(venta.total)||0,
     precio_unitario: Number(venta.total)||0,
     cantidad: 1,
+    descuentoItemPct: 0,
+    descuentoItemMonto: 0,
     descuentoConjunto: 0,
     precioFinal: null,
     conjuntoId: null,
@@ -69,6 +71,7 @@ function abrirFormularioEditarVenta(venta) {
   document.getElementById("ev-cliente-id").value = clienteIdDeVenta(venta);
   document.getElementById("ev-cliente-nombre").value = venta.cliente || "Consumidor final";
   document.getElementById("ev-metodo-pago").value = metodoParaEditor(venta);
+  document.getElementById("ev-pendiente").checked = typeof ventaPendiente === "function" ? ventaPendiente(venta) : venta.estado === "pendiente";
   document.getElementById("ev-fecha").value = fechaISOFromVenta(venta);
   document.getElementById("ev-hora").value = venta.hora || "00:00";
   document.getElementById("ev-desc-general").value = Number(venta.descuento_general)||0;
@@ -82,6 +85,7 @@ function abrirFormularioEditarVenta(venta) {
 
   mostrarInfoAuditoria(venta);
   renderItemsEdicion();
+  onEditPendienteChange();
   recalcularTotalEdicion();
   openOv("ov-editar-venta");
 }
@@ -137,6 +141,14 @@ function crearModalEditarVenta() {
               </select>
             </div>
           </div>
+
+          <label style="display:flex;align-items:flex-start;gap:9px;background:var(--azbg);border:0.5px solid var(--azbr);border-radius:8px;padding:10px 13px;margin-bottom:12px;cursor:pointer;">
+            <input type="checkbox" id="ev-pendiente" onchange="onEditPendienteChange()" style="width:15px;height:15px;margin-top:1px;accent-color:var(--az);"/>
+            <span>
+              <span style="display:block;font-size:12px;color:var(--az);font-weight:600;">Venta pendiente</span>
+              <span style="display:block;font-size:10px;color:var(--az);opacity:.8;margin-top:2px;">Reserva stock, sin caja ni cuenta corriente hasta cobrarla.</span>
+            </span>
+          </label>
 
           <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:12px 14px;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;">
             <div>
@@ -196,7 +208,7 @@ function renderItemsEdicion() {
     const subtotal = (Number(item.cantidad)||0) * (Number(item.precio_unitario ?? item.precio)||0);
     return `
       <div style="border:0.5px solid var(--crb);border-radius:8px;background:var(--cr);padding:10px;">
-        <div style="display:grid;grid-template-columns:minmax(180px,1.3fr) minmax(150px,1fr) 78px 110px 28px;gap:8px;align-items:end;">
+        <div style="display:grid;grid-template-columns:minmax(170px,1.3fr) minmax(140px,1fr) 68px 96px 72px 28px;gap:8px;align-items:end;">
           <div class="fg" style="margin-bottom:0;">
             <label>Producto ${i+1}</label>
             <select id="ev-item-prod-${i}" onchange="onEditItemProductoChange(${i})">${productoOptions(item.pid)}</select>
@@ -212,6 +224,10 @@ function renderItemsEdicion() {
           <div class="fg" style="margin-bottom:0;">
             <label>Precio unit.</label>
             <input id="ev-item-precio-${i}" type="number" min="0" step="0.01" value="${Number(item.precio_unitario ?? item.precio)||0}" oninput="onEditItemNumeroChange(${i})"/>
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label>Desc. %</label>
+            <input id="ev-item-desc-${i}" type="number" min="0" max="100" step="0.01" value="${Number(item.descuentoItemPct)||0}" oninput="onEditItemNumeroChange(${i})"/>
           </div>
           <button class="btn-icon" type="button" onclick="eliminarItemEditVenta(${i})" title="Quitar producto" style="width:28px;height:28px;color:var(--rj);"><i class="ti ti-x" style="font-size:11px;"></i></button>
         </div>
@@ -232,6 +248,7 @@ function syncItemDesdeDOM(i) {
   const variante = producto?.variantes.find(v => v.cod === cod);
   const cantidad = Math.max(1, parseFloat(document.getElementById(`ev-item-cant-${i}`)?.value)||1);
   const precio = Math.max(0, parseFloat(document.getElementById(`ev-item-precio-${i}`)?.value)||0);
+  const descuentoItemPct = Math.max(0, Math.min(100, parseFloat(document.getElementById(`ev-item-desc-${i}`)?.value)||0));
   Object.assign(item, {
     pid: producto?.id || null,
     cod: variante?.cod || cod,
@@ -241,6 +258,8 @@ function syncItemDesdeDOM(i) {
     precio,
     precio_unitario: precio,
     cantidad,
+    descuentoItemPct,
+    descuentoItemMonto: Math.round(precio * cantidad * descuentoItemPct / 100),
     conjuntoId: producto?.conjuntoId || item.conjuntoId || null,
     tipoConjunto: producto?.tipoConjunto || item.tipoConjunto || null,
   });
@@ -265,6 +284,8 @@ function onEditItemProductoChange(i) {
     talle: variante?.t || "",
     precio: producto.precio || 0,
     precio_unitario: producto.precio || 0,
+    descuentoItemPct: item.descuentoItemPct || 0,
+    descuentoItemMonto: item.descuentoItemMonto || 0,
     conjuntoId: producto.conjuntoId || null,
     tipoConjunto: producto.tipoConjunto || null,
   });
@@ -295,6 +316,8 @@ function agregarItemEditVenta() {
     precio: producto?.precio || 0,
     precio_unitario: producto?.precio || 0,
     cantidad: 1,
+    descuentoItemPct: 0,
+    descuentoItemMonto: 0,
     descuentoConjunto: 0,
     precioFinal: null,
     conjuntoId: producto?.conjuntoId || null,
@@ -361,6 +384,7 @@ function calcularCobroEdicion(items = null) {
     id: item.pid,
     cantidad: Number(item.cantidad)||1,
     precio: Number(item.precio_unitario ?? item.precio)||0,
+    descuentoItemPct: Math.max(0, Math.min(100, Number(item.descuentoItemPct)||0)),
     descuentoConjunto: 0,
     precioFinal: null,
   }));
@@ -369,15 +393,21 @@ function calcularCobroEdicion(items = null) {
     : {productosConDescuento:baseItems,descuentoTotal:0,descuentoConjuntoAplicado:false,detalles:[]};
   const detalles = resultado.productosConDescuento.map((item, i) => {
     const original = baseItems[i] || item;
+    const cantidad = Number(item.cantidad ?? original.cantidad)||1;
+    const precio = Number(item.precio)||0;
+    const descuentoItemPct = Math.max(0, Math.min(100, Number(original.descuentoItemPct)||0));
+    const descuentoItemMonto = Math.round(precio*cantidad*descuentoItemPct/100);
     return {
       pid: item.pid || item.id,
       cod: item.cod || original.cod,
       nombre: item.nombre || original.nombre,
       color: item.color || original.color || "",
       talle: item.talle || original.talle || "",
-      precio: Number(item.precio)||0,
-      precio_unitario: Number(item.precio)||0,
-      cantidad: Number(item.cantidad ?? original.cantidad)||1,
+      precio,
+      precio_unitario: precio,
+      cantidad,
+      descuentoItemPct,
+      descuentoItemMonto,
       descuentoConjunto: Number(item.descuentoConjunto)||0,
       precioFinal: item.precioFinal || null,
       conjuntoId: item.conjuntoId || null,
@@ -385,11 +415,12 @@ function calcularCobroEdicion(items = null) {
     };
   });
   const subtotal = detalles.reduce((a,x)=>a+x.precio*x.cantidad,0);
+  const descuentoItems = detalles.reduce((a,x)=>a+(Number(x.descuentoItemMonto)||0),0);
   const descuentoConjunto = Math.round(Number(resultado.descuentoTotal)||0);
-  const base = Math.max(0, subtotal-descuentoConjunto);
+  const base = Math.max(0, subtotal-descuentoItems-descuentoConjunto);
   const descuentoGeneralMonto = Math.round(base*(descGeneral/100));
   const total = Math.round(base-descuentoGeneralMonto);
-  return {subtotal,descuentoConjunto,descuentoGeneral:descGeneral,descuentoGeneralMonto,total,detalles,detallesConjuntos:resultado.detalles||[],descuentoConjuntoAplicado:descuentoConjunto>0};
+  return {subtotal,descuentoItems,descuentoConjunto,descuentoGeneral:descGeneral,descuentoGeneralMonto,total,detalles,detallesConjuntos:resultado.detalles||[],descuentoConjuntoAplicado:descuentoConjunto>0};
 }
 
 function recalcularTotalEdicion() {
@@ -398,6 +429,7 @@ function recalcularTotalEdicion() {
   document.getElementById("ev-subtotal").textContent = moneyVenta(cobro.subtotal);
   document.getElementById("ev-total").textContent = moneyVenta(cobro.total);
   const partes = [];
+  if (cobro.descuentoItems > 0) partes.push(`Productos: ${moneyVenta(cobro.descuentoItems)}`);
   if (cobro.descuentoConjunto > 0) partes.push(`Conjunto: ${moneyVenta(cobro.descuentoConjunto)}`);
   if (cobro.descuentoGeneralMonto > 0) partes.push(`General: ${moneyVenta(cobro.descuentoGeneralMonto)}`);
   document.getElementById("ev-descuento-info").textContent = partes.length ? `Descuentos ${partes.join(" · ")}` : "";
@@ -417,13 +449,14 @@ function calcularTotalEdicion() {
 }
 
 function firmaItems(items) {
-  return items.map(it => `${it.pid}|${it.cod}|${Number(it.cantidad)||0}|${Number(it.precio_unitario ?? it.precio)||0}`).join(";");
+  return items.map(it => `${it.pid}|${it.cod}|${Number(it.cantidad)||0}|${Number(it.precio_unitario ?? it.precio)||0}|${Number(it.descuentoItemPct)||0}`).join(";");
 }
 
 function detectarCambiosEdicion(totalNuevo) {
   const cambios = [];
   const clienteNombre = cleanPlainText(document.getElementById("ev-cliente-nombre").value) || "Consumidor final";
   const metodo = document.getElementById("ev-metodo-pago").value;
+  const pendiente = Boolean(document.getElementById("ev-pendiente")?.checked);
   const fecha = document.getElementById("ev-fecha").value;
   const horaVal = document.getElementById("ev-hora").value;
   const obs = cleanPlainText(document.getElementById("ev-obs").value);
@@ -433,7 +466,8 @@ function detectarCambiosEdicion(totalNuevo) {
   if (clienteNombre !== (ventaOriginal.cliente || "Consumidor final")) cambios.push(`Cliente: ${ventaOriginal.cliente || "Consumidor final"} -> ${clienteNombre}`);
   if (firmaItems(actuales) !== firmaItems(originales)) cambios.push("Productos, cantidades o precios modificados");
   if (Math.abs(totalNuevo - (ventaOriginal.total || 0)) > 0.01) cambios.push(`Total: ${moneyVenta(ventaOriginal.total || 0)} -> ${moneyVenta(totalNuevo)}`);
-  if (metodo !== metodoParaEditor(ventaOriginal)) cambios.push(`Método: ${ventaOriginal.metodo || ventaOriginal.metodo_pago || "—"} -> ${pagoLabel(metodo)}`);
+  if (pendiente !== (typeof ventaPendiente === "function" ? ventaPendiente(ventaOriginal) : ventaOriginal.estado === "pendiente")) cambios.push(pendiente ? "Venta marcada como pendiente" : "Venta marcada como cobrada");
+  if (!pendiente && metodo !== metodoParaEditor(ventaOriginal)) cambios.push(`Método: ${ventaOriginal.metodo || ventaOriginal.metodo_pago || "—"} -> ${pagoLabel(metodo)}`);
   if (fecha !== fechaISOFromVenta(ventaOriginal)) cambios.push(`Fecha: ${ventaOriginal.fecha || "—"} -> ${fecha}`);
   if (horaVal !== (ventaOriginal.hora || "00:00")) cambios.push(`Hora: ${ventaOriginal.hora || "00:00"} -> ${horaVal}`);
   if (obs !== (ventaOriginal.observaciones || "")) cambios.push("Observaciones modificadas");
@@ -455,7 +489,18 @@ function onEditClienteChange() {
   recalcularTotalEdicion();
 }
 
+function onEditPendienteChange() {
+  const pending = Boolean(document.getElementById("ev-pendiente")?.checked);
+  const metodo = document.getElementById("ev-metodo-pago");
+  if (metodo) {
+    metodo.disabled = pending;
+    if (pending) metodo.value = "efectivo";
+  }
+  recalcularTotalEdicion();
+}
+
 function pagosEditados(totalFinal, metodo, clienteId) {
+  if (document.getElementById("ev-pendiente")?.checked) return [];
   if (metodo === "mixto") {
     const originales = normalizarPagosVenta(ventaOriginal, ventaOriginal.total);
     const base = ventaOriginal.total || totalFinal || 1;
@@ -481,6 +526,7 @@ function guardarCambiosVenta() {
   const clienteNombre = cleanPlainText(document.getElementById("ev-cliente-nombre").value) || "Consumidor final";
   const fechaISO = document.getElementById("ev-fecha").value || fechaISOFromVenta(ventaOriginal);
   const metodo = document.getElementById("ev-metodo-pago").value;
+  const pendiente = Boolean(document.getElementById("ev-pendiente")?.checked);
   const pagos = pagosEditados(cobro.total, metodo, clienteId);
   if (!pagos) return;
 
@@ -492,9 +538,10 @@ function guardarCambiosVenta() {
     fecha: fechaCortaFromISO(fechaISO),
     fechaISO,
     hora: document.getElementById("ev-hora").value || "00:00",
-    metodo: [...new Set(pagos.map(p => pagoLabel(p.tipo)))].join(" + "),
-    metodo_pago: pagos.length === 1 ? pagos[0].tipo : "mixto",
+    metodo: pendiente ? "Pendiente" : [...new Set(pagos.map(p => pagoLabel(p.tipo)))].join(" + "),
+    metodo_pago: pendiente ? "pendiente" : (pagos.length === 1 ? pagos[0].tipo : "mixto"),
     pagos,
+    estado: pendiente ? "pendiente" : "pagada",
     items: describirItemsVenta(cobro.detalles),
     items_detalle: cobro.detalles,
     producto: detallePrincipal.pid || null,
@@ -502,6 +549,7 @@ function guardarCambiosVenta() {
     cantidad: cobro.detalles.reduce((a,x)=>a+(Number(x.cantidad)||0),0),
     precio_unitario: cobro.detalles.length===1 ? detallePrincipal.precio_unitario : 0,
     subtotal: cobro.subtotal,
+    descuento_items_monto: cobro.descuentoItems,
     descuento_general: cobro.descuentoGeneral,
     descuento_general_monto: cobro.descuentoGeneralMonto,
     descuentoConjunto: cobro.descuentoConjunto,

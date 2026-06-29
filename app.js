@@ -280,6 +280,51 @@ function roundPsy(n){
   return Math.floor(n/step)*step;
 }
 function totalCaja(k){return Object.values(DB.cajas[k]).reduce((a,v)=>a+v,0);}
+function cajaMedio(medio){
+  return medio==="transferencia"?"mercadopago":medio;
+}
+function cajaLabel(k){
+  return k==="reinversion"?"Reinversión":"Principal";
+}
+function medioLabel(medio){
+  const m=cajaMedio(medio);
+  return m==="mercadopago"?"Mercado Pago":m==="debito"?"Débito":m==="credito"?"Crédito":"Efectivo";
+}
+function ajustarSaldoCaja(caja, medio, monto){
+  const key=cajaMedio(medio);
+  if(!DB.cajas?.[caja] || DB.cajas[caja][key]===undefined)return;
+  DB.cajas[caja][key]=(Number(DB.cajas[caja][key])||0)+(Number(monto)||0);
+}
+function saldoCaja(caja, medio){
+  const key=cajaMedio(medio);
+  return Number(DB.cajas?.[caja]?.[key])||0;
+}
+function productoPerteneceAProveedor(producto, proveedor){
+  if(!producto || !proveedor)return false;
+  if(Number(producto.provId)===Number(proveedor.id))return true;
+  if(Array.isArray(proveedor.prodIds)&&proveedor.prodIds.map(Number).includes(Number(producto.id)))return true;
+  const provNombre=String(producto.proveedor||producto.provNombre||"").trim().toLowerCase();
+  return Boolean(provNombre && provNombre===String(proveedor.nombre||"").trim().toLowerCase());
+}
+function sincronizarProveedorProducto(productoId, nuevoProvId, viejoProvId=null){
+  DB.proveedores.forEach(prov=>{
+    if(!Array.isArray(prov.prodIds))prov.prodIds=[];
+    if(viejoProvId && Number(prov.id)===Number(viejoProvId)){
+      prov.prodIds=prov.prodIds.filter(id=>Number(id)!==Number(productoId));
+    }
+    if(nuevoProvId && Number(prov.id)===Number(nuevoProvId) && !prov.prodIds.map(Number).includes(Number(productoId))){
+      prov.prodIds.push(productoId);
+    }
+  });
+}
+function productosDeProveedor(prov){
+  const productos=DB.productos.filter(p=>productoPerteneceAProveedor(p,prov));
+  productos.forEach(p=>sincronizarProveedorProducto(p.id,p.provId||prov.id));
+  return productos;
+}
+function ventaPendiente(venta){
+  return String(venta?.estado||"").toLowerCase()==="pendiente";
+}
 function openOv(id){document.getElementById(id).classList.add("on");}
 function closeOv(id){document.getElementById(id).classList.remove("on");}
 function nivelBadge(n){const m={Oro:"background:#FAEEDA;color:#633806",Plata:"background:#F1EFE8;color:#444441",Bronce:"background:#FAECE7;color:#712B13",Nuevo:"background:var(--azbg);color:var(--az)"};return`<span class="bd" style="${m[n]||""};font-size:10px;">${n}</span>`;}
@@ -977,11 +1022,13 @@ function guardarProducto(cargarOtro=false){
   let savedId=editingProductId;
   if(editingProductId){
     const prod=DB.productos.find(x=>x.id===editingProductId);
+    const oldProvId=prod?.provId||null;
     Object.assign(prod,{nombre,marca,tipo,codigo,cat:catText,gen:genText,costo,gan:parseFloat(document.getElementById("np-gan").value)||0,precio,provId:provIdVal,variantes:variantes.length?variantes:prod.variantes});
+    sincronizarProveedorProducto(prod.id,provIdVal,oldProvId);
   }else{
     savedId=nextId(DB.productos);
     DB.productos.push({id:savedId,nombre,marca,tipo,codigo,cat:catText,gen:genText,costo,gan:parseFloat(document.getElementById("np-gan").value)||140,precio,provId:provIdVal,variantes});
-    if(provIdVal){const prov=DB.proveedores.find(p=>p.id===provIdVal);if(prov&&!prov.prodIds.includes(savedId))prov.prodIds.push(savedId);}
+    sincronizarProveedorProducto(savedId,provIdVal);
   }
   editingProductId=null;
   persistDBSoon();
@@ -1032,8 +1079,7 @@ function renderIngVarRowsForProd(prov){
   const c=document.getElementById("ing-var-rows");
   if(!prov){c.innerHTML=`<div style="text-align:center;padding:20px;color:var(--gc);font-size:12px;">Seleccioná un proveedor primero</div>`;return;}
   const q=ingProdQ.trim().toLowerCase();
-  const productos=DB.productos
-    .filter(p=>prov.prodIds.includes(p.id))
+  const productos=productosDeProveedor(prov)
     .filter(p=>!ingPinnedProdId||p.id===ingPinnedProdId)
     .filter(p=>!q||p.nombre.toLowerCase().includes(q)||p.codigo.toLowerCase().includes(q)||p.cat.toLowerCase().includes(q));
   ingRowsData=productos.flatMap(p=>p.variantes.map(v=>{
@@ -1092,11 +1138,15 @@ function confirmarIngreso(){
   const fechaISO=document.getElementById("ing-fecha").value||toDateInput();
   const fecha=shortFromISO(fechaISO);
   const medio=metodo==="efectivo"?"efectivo":metodo==="mercadopago"?"mercadopago":"";
+  if(metodo!=="cuenta_prov"&&medio&&total>saldoCaja(caja,medio)){
+    alert(`Saldo insuficiente en ${cajaLabel(caja)} (${medioLabel(medio)}). Disponible: ${fmt(saldoCaja(caja,medio))}.`);
+    return;
+  }
   items.forEach(r=>{
     const prod=DB.productos.find(x=>x.id===r.prodId);
     if(prod){const v=prod.variantes.find(x=>x.cod===r.cod);if(v)v.stock+=r.cantIngreso;if(r.nuevoCosto)prod.costo=r.nuevoCosto;}
   });
-  if(metodo!=="cuenta_prov"&&medio){DB.cajas[caja][medio]=Math.max(0,(DB.cajas[caja][medio]||0)-total);}
+  if(metodo!=="cuenta_prov"&&medio){ajustarSaldoCaja(caja,medio,-total);}
   const newId=nextId(DB.proveedores.flatMap(p=>p.compras));
   prov.compras.unshift({id:newId,fecha,fechaISO,remito:cleanPlainText(document.getElementById("ing-remito").value),items:items.map(r=>({cod:r.cod,nombre:`${r.prodNombre} · ${varianteLabel(r)}`,cant:r.cantIngreso,costo:r.nuevoCosto})),total,metodo,caja,uds:items.reduce((a,r)=>a+r.cantIngreso,0)});
   if(metodo!=="cuenta_prov")DB.movimientos.unshift({id:nextId(DB.movimientos),fecha,fechaISO,hora:hora(),tipo:"gasto",concepto:`Compra a ${prov.nombre}`,caja,medio,monto:total,signo:-1});
@@ -1184,7 +1234,7 @@ function renderPDV(){
             <span>Subtotal</span><span id="cf-sub">$0</span>
           </div>
           <div id="cf-discount-row" style="display:none;justify-content:space-between;font-size:12px;color:var(--vd);margin-bottom:5px;">
-            <span>Descuento conjunto</span><span id="cf-discount">−$0</span>
+            <span>Descuentos</span><span id="cf-discount">−$0</span>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:500;padding-top:7px;border-top:0.5px solid var(--crb);margin-bottom:10px;">
             <span>Total</span><span id="cf-total">$0</span>
@@ -1275,7 +1325,7 @@ function addToCarrito(pid, vcod){
   const v=typeof vcod==="string"?p.variantes.find(x=>x.cod===vcod):vcod;
   const ex=carrito().items.find(x=>x.cod===v.cod);
   if(ex){if(ex.qty>=v.stock)return;ex.qty++;ex.cantidad=ex.qty;}
-  else carrito().items.push({pid:p.id,cod:v.cod,nombre:p.nombre,color:"",talle:v.t,precio:p.precio,qty:1,cantidad:1,conjuntoId:p.conjuntoId||null,tipoConjunto:p.tipoConjunto||null});
+  else carrito().items.push({pid:p.id,cod:v.cod,nombre:p.nombre,color:"",talle:v.t,precio:p.precio,qty:1,cantidad:1,descuentoItemPct:0,descuentoItemMonto:0,conjuntoId:p.conjuntoId||null,tipoConjunto:p.tipoConjunto||null});
   renderCarrito();closeOv("ov-var");
 }
 
@@ -1293,12 +1343,26 @@ function renderCarrito(){
           <span style="font-size:12px;font-weight:500;min-width:14px;text-align:center;">${item.qty}</span>
           <button class="qb" onclick="cambiarQty(${i},1)">+</button>
         </div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:10px;color:var(--gc);">
+          <span>Desc.</span>
+          <input type="number" min="0" max="100" value="${Number(item.descuentoItemPct)||0}" oninput="cambiarDescItem(${i},this.value)" style="width:54px;height:24px;padding:2px 5px;font-size:11px;text-align:right;"/>
+          <span>%</span>
+        </div>
       </div>
       <div>
-        <div style="font-size:12px;font-weight:500;">${fmt(item.precio*item.qty)}</div>
+        <div style="font-size:12px;font-weight:500;">${fmt(Math.max(0,(item.precio*item.qty)-((item.precio*item.qty)*(Number(item.descuentoItemPct)||0)/100)))}</div>
+        ${Number(item.descuentoItemPct)>0?`<div style="font-size:10px;color:var(--vd);text-align:right;">-${Number(item.descuentoItemPct)||0}%</div>`:""}
         <button class="btn-icon" style="width:22px;height:22px;margin-top:4px;" onclick="carrito().items.splice(${i},1);renderCarrito()"><i class="ti ti-x" style="font-size:11px;"></i></button>
       </div>
     </div>`).join("");
+  recalcPDV();
+}
+
+function cambiarDescItem(i,value){
+  const item=carrito().items[i];
+  if(!item)return;
+  item.descuentoItemPct=Math.max(0,Math.min(100,parseFloat(value)||0));
+  item.descuentoItemMonto=Math.round((Number(item.precio)||0)*(Number(item.qty)||1)*item.descuentoItemPct/100);
   recalcPDV();
 }
 
@@ -1314,7 +1378,7 @@ function limpiarCarrito(){carrito().items=[];renderCarrito();}
 function recalcPDV(){
   const sub=carrito().items.reduce((a,x)=>a+x.precio*x.qty,0);
   const cobro=typeof calcularCobroCarrito==="function"?calcularCobroCarrito(0):{total:sub,descuentoConjunto:0};
-  const desc=Number(cobro.descuentoConjunto)||0;
+  const desc=(Number(cobro.descuentoItems)||0)+(Number(cobro.descuentoConjunto)||0);
   const s=document.getElementById("cf-sub");
   const d=document.getElementById("cf-discount");
   const dr=document.getElementById("cf-discount-row");
@@ -1412,6 +1476,15 @@ function pagoLabel(tipo){
   return PAGO_LABELS[t]||tipo||"Efectivo";
 }
 
+function ajustarPagosAlTotal(pagos,total){
+  let restante=Math.max(0,Number(total)||0);
+  return pagos.map(p=>{
+    const monto=Math.min(Number(p.monto)||0,restante);
+    restante-=monto;
+    return {...p,monto};
+  }).filter(p=>p.monto>0);
+}
+
 function fechaISOFromVenta(venta){
   const f=venta?.fechaISO||venta?.fecha_iso||venta?.fecha_iso_editado||venta?.fecha;
   if(!f)return toDateInput();
@@ -1458,6 +1531,8 @@ function normalizarItemsVenta(venta){
       precio: Number(it.precio ?? it.precio_unitario) || 0,
       precio_unitario: Number(it.precio_unitario ?? it.precio) || 0,
       cantidad: Number(it.cantidad ?? it.qty) || 1,
+      descuentoItemPct: Number(it.descuentoItemPct ?? it.descuento_item_pct) || 0,
+      descuentoItemMonto: Number(it.descuentoItemMonto ?? it.descuento_item_monto) || 0,
       descuentoConjunto: Number(it.descuentoConjunto) || 0,
       precioFinal: Number(it.precioFinal) || null,
       conjuntoId: it.conjuntoId || null,
@@ -1479,6 +1554,8 @@ function normalizarItemsVenta(venta){
       precio,
       precio_unitario: precio,
       cantidad,
+      descuentoItemPct: Number(venta.descuentoItemPct ?? venta.descuento_item_pct) || 0,
+      descuentoItemMonto: Number(venta.descuentoItemMonto ?? venta.descuento_item_monto) || 0,
       descuentoConjunto: Number(venta.descuentoConjunto)||0,
       precioFinal: null,
       conjuntoId: venta.conjuntoId || null,
@@ -1494,6 +1571,7 @@ function describirItemsVenta(items){
 }
 
 function normalizarPagosVenta(venta,totalOverride){
+  if(ventaPendiente(venta))return [];
   const total=Number(totalOverride ?? venta?.total)||0;
   if(Array.isArray(venta?.pagos)&&venta.pagos.length){
     return venta.pagos.map(p=>({tipo:pagoTipoNormalizado(p.tipo||p.metodo),monto:Number(p.monto)||0}));
@@ -1514,11 +1592,85 @@ function movimientosDeVenta(venta){
   return DB.movimientos.filter(m=>m.venta_id===id || (id && m.tipo==="venta" && String(m.concepto||"").includes(`Venta #${id}`)));
 }
 
+function transferenciaDeMovimiento(mov){
+  if(!mov || mov.tipo!=="transferencia")return null;
+  if(mov.transferencia_id)return (DB.transferencias||[]).find(t=>t.id===mov.transferencia_id)||null;
+  const byMov=(DB.transferencias||[]).find(t=>t.movimiento_id===mov.id);
+  if(byMov)return byMov;
+  return (DB.transferencias||[]).find(t=>
+    t.fechaISO===(mov.fechaISO||"") &&
+    (t.hora||"") === (mov.hora||"") &&
+    Number(t.monto)===Number(mov.monto) &&
+    (t.medio||"efectivo")===cajaMedio(mov.medio||"efectivo") &&
+    t.origen===mov.caja
+  )||null;
+}
+
+function clienteDeMovimientoPago(mov){
+  if(!mov || mov.tipo!=="pago_cliente")return null;
+  if(mov.cliente_id)return DB.clientes.find(c=>c.id==mov.cliente_id)||null;
+  const nombre=String(mov.concepto||"").split("—").pop()?.trim();
+  return nombre ? DB.clientes.find(c=>String(c.nombre||"").trim()===nombre) || null : null;
+}
+
+function gastoDeMovimiento(mov){
+  if(!mov || mov.tipo!=="gasto")return null;
+  if(mov.gasto_id)return DB.gastos.find(g=>g.id===mov.gasto_id)||null;
+  const byMov=DB.gastos.find(g=>g.movimiento_id===mov.id);
+  if(byMov)return byMov;
+  return DB.gastos.find(g=>
+    g.fechaISO===(mov.fechaISO||"") &&
+    Number(g.monto)===Number(mov.monto) &&
+    g.caja===mov.caja &&
+    cajaMedio(g.medio)===cajaMedio(mov.medio)
+  )||null;
+}
+
+function sincronizarGastoDesdeMovimiento(mov){
+  const g=gastoDeMovimiento(mov);
+  if(!g)return;
+  Object.assign(g,{
+    movimiento_id:mov.id,
+    fecha:mov.fecha,
+    fechaISO:mov.fechaISO,
+    caja:mov.caja,
+    medio:cajaMedio(mov.medio),
+    monto:mov.monto,
+    desc:mov.concepto,
+  });
+}
+
+function ajustarClientePorPagoMovimiento(mov, factor){
+  const c=clienteDeMovimientoPago(mov);
+  if(!c)return;
+  ensureClienteShape(c);
+  const monto=Number(mov.monto)||0;
+  if(factor<0){
+    c.deuda+=monto;
+    c.historial=Array.isArray(c.historial)?c.historial.filter(h=>h.movimiento_id!==mov.id):[];
+  }else{
+    const aplicado=Math.min(monto,c.deuda);
+    const excedente=Math.max(0,monto-aplicado);
+    c.deuda=Math.max(0,c.deuda-aplicado);
+    if(excedente>0)c.saldoFavor+=excedente;
+    c.historial.unshift({fecha:mov.fecha,concepto:mov.concepto||"Pago",monto,tipo:"abono",pts:0,movimiento_id:mov.id});
+  }
+  refreshClienteEstado(c);
+}
+
 function ajustarCajaPorMovimiento(mov, factor){
-  if(!mov?.caja || !mov?.medio)return;
-  const caja=DB.cajas?.[mov.caja];
-  if(!caja || caja[mov.medio]===undefined)return;
-  caja[mov.medio]=(Number(caja[mov.medio])||0)+(Number(mov.signo)||1)*(Number(mov.monto)||0)*factor;
+  if(!mov?.medio)return;
+  const monto=(Number(mov.monto)||0)*factor;
+  if(mov.tipo==="transferencia"){
+    const tr=transferenciaDeMovimiento(mov);
+    const origen=mov.origen||tr?.origen||mov.caja;
+    const destino=mov.destino||tr?.destino;
+    if(origen)ajustarSaldoCaja(origen,mov.medio,-monto);
+    if(destino)ajustarSaldoCaja(destino,mov.medio,monto);
+    return;
+  }
+  if(!mov?.caja)return;
+  ajustarSaldoCaja(mov.caja,mov.medio,(Number(mov.signo)||1)*(Number(mov.monto)||0)*factor);
 }
 
 function revertirEfectosVenta(venta, opts={}){
@@ -1589,6 +1741,7 @@ function aplicarEfectosVenta(venta){
     const v=p?.variantes?.find(x=>x.cod===item.cod);
     if(v)v.stock=Math.max(0,(Number(v.stock)||0)-(Number(item.cantidad)||0));
   });
+  if(ventaPendiente(venta))return;
 
   const cl=clienteDeVenta(venta);
   if(cl)ensureClienteShape(cl);
@@ -1651,15 +1804,21 @@ function calcularCobroCarrito(descGeneral=0){
     : {productosConDescuento:baseItems,descuentoTotal:0,descuentoConjuntoAplicado:false,detalles:[]};
   const detalles=resultado.productosConDescuento.map((item,i)=>{
     const original=carrito().items[i]||item;
+    const cantidad=Number(item.cantidad ?? original.qty)||1;
+    const precio=Number(item.precio)||0;
+    const descuentoItemPct=Math.max(0,Math.min(100,Number(original.descuentoItemPct)||0));
+    const descuentoItemMonto=Math.round(precio*cantidad*descuentoItemPct/100);
     return {
       pid:item.pid||item.id,
       cod:item.cod||original.cod,
       nombre:item.nombre||original.nombre,
       color:item.color||original.color,
       talle:item.talle||original.talle,
-      precio:Number(item.precio)||0,
-      precio_unitario:Number(item.precio)||0,
-      cantidad:Number(item.cantidad ?? original.qty)||1,
+      precio,
+      precio_unitario:precio,
+      cantidad,
+      descuentoItemPct,
+      descuentoItemMonto,
       descuentoConjunto:Number(item.descuentoConjunto)||0,
       precioFinal:item.precioFinal||null,
       conjuntoId:item.conjuntoId||null,
@@ -1667,11 +1826,12 @@ function calcularCobroCarrito(descGeneral=0){
     };
   });
   const subtotal=detalles.reduce((a,x)=>a+x.precio*x.cantidad,0);
+  const descuentoItems=detalles.reduce((a,x)=>a+(Number(x.descuentoItemMonto)||0),0);
   const descuentoConjunto=Math.round(Number(resultado.descuentoTotal)||0);
-  const base=Math.max(0,subtotal-descuentoConjunto);
+  const base=Math.max(0,subtotal-descuentoItems-descuentoConjunto);
   const descuentoGeneralMonto=Math.round(base*((Number(descGeneral)||0)/100));
   const total=Math.round(base-descuentoGeneralMonto);
-  return {subtotal,descuentoConjunto,descuentoGeneral:Number(descGeneral)||0,descuentoGeneralMonto,total,detalles,detallesConjuntos:resultado.detalles||[],descuentoConjuntoAplicado:descuentoConjunto>0};
+  return {subtotal,descuentoItems,descuentoConjunto,descuentoGeneral:Number(descGeneral)||0,descuentoGeneralMonto,total,detalles,detallesConjuntos:resultado.detalles||[],descuentoConjuntoAplicado:descuentoConjunto>0};
 }
 
 function abrirCobrar(){
@@ -1685,6 +1845,8 @@ function abrirCobrar(){
   const cl  = DB.clientes.find(x=>x.id==cid);
 
   document.getElementById("cobrar-desc").value = "0";
+  const pend=document.getElementById("cobrar-pendiente-toggle");
+  if(pend)pend.checked=false;
   document.getElementById("cobrar-items").textContent = `${carrito().items.reduce((a,x)=>a+x.qty,0)} productos`;
   document.getElementById("cobrar-cliente-label").textContent = cl ? cl.nombre : "Consumidor final";
   document.getElementById("cobrar-notif").innerHTML = "";
@@ -1751,6 +1913,7 @@ function recalcCobrar(){
   const notif=document.getElementById("cobrar-notif");
   if(notif){
     const partes=[];
+    if(cobro.descuentoItems>0)partes.push(`Descuento por producto: ${fmt(cobro.descuentoItems)}`);
     if(cobro.descuentoConjunto>0)partes.push(`Descuento por conjunto: ${fmt(cobro.descuentoConjunto)}`);
     if(cobro.descuentoGeneralMonto>0)partes.push(`Descuento general: ${fmt(cobro.descuentoGeneralMonto)}`);
     notif.innerHTML=partes.length?`<div class="notif notif-vd"><i class="ti ti-discount-2"></i>${partes.join(" · ")}</div>`:"";
@@ -1758,6 +1921,7 @@ function recalcCobrar(){
 
   const sumaPagos = pagosMethods.reduce((a,pm)=>a+pm.monto, 0);
   const restante  = total - sumaPagos;
+  const pendiente = Boolean(document.getElementById("cobrar-pendiente-toggle")?.checked);
 
   const cid = carrito().clienteId;
   const cl  = DB.clientes.find(x=>x.id==cid);
@@ -1789,9 +1953,18 @@ function recalcCobrar(){
   // Diferencia e indicador
   const divDiff = document.getElementById("cobrar-diferencia");
   const btnConf = document.getElementById("cobrar-btn-confirmar");
-  const cubierto = usarCtaCte || Math.abs(restante) < 1;
+  const cubierto = pendiente || usarCtaCte || Math.abs(restante) < 1;
 
-  if(cubierto){
+  if(pendiente){
+    if(divDiff){
+      divDiff.style.display="block";
+      divDiff.style.background="var(--azbg)";
+      divDiff.style.color="var(--az)";
+      divDiff.style.border="0.5px solid var(--azbr)";
+      divDiff.textContent="Venta pendiente: reserva stock y no mueve caja.";
+    }
+    if(btnConf){ btnConf.disabled=false; btnConf.style.opacity="1"; }
+  }else if(cubierto){
     if(divDiff) divDiff.style.display = "none";
     if(btnConf){ btnConf.disabled=false; btnConf.style.opacity="1"; }
   } else if(restante > 0){
@@ -1825,20 +1998,21 @@ function procesarVenta(){
 
   const cid = carrito().clienteId;
   const cl  = DB.clientes.find(x=>x.id==cid);
+  const pendiente = Boolean(document.getElementById("cobrar-pendiente-toggle")?.checked);
 
   // Verificar si se usa cta corriente para el resto
   const ctaToggle = document.getElementById("cobrar-cta-cte-toggle");
-  const usarCtaCte = ctaToggle?.checked && cl && restante > 0;
+  const usarCtaCte = !pendiente && ctaToggle?.checked && cl && restante > 0;
 
   // Validación: falta dinero y no se activa cta cte
-  if(restante > 0.5 && !usarCtaCte){
+  if(!pendiente && restante > 0.5 && !usarCtaCte){
     document.getElementById("cobrar-diferencia").textContent = `Faltan ${fmt(restante)} para confirmar`;
     return;
   }
 
   const pagos=[];
   const metLabels = [];
-  pagosMethods.forEach(pm=>{
+  if(!pendiente)pagosMethods.forEach(pm=>{
     if(!pm.monto) return;
     const tipo=pagoTipoNormalizado(pm.tipo);
     pagos.push({tipo,monto:pm.monto});
@@ -1846,12 +2020,13 @@ function procesarVenta(){
   });
 
   // ── Si el resto va a cuenta corriente ──
-  if(usarCtaCte && restante > 0){
+  if(!pendiente && usarCtaCte && restante > 0){
     pagos.push({tipo:"cuenta",monto:restante});
     metLabels.push("Cta. cte.");
   }
+  const pagosFinales=pendiente?[]:ajustarPagosAlTotal(pagos,total);
 
-  const metLabel = [...new Set(metLabels)].join(" + ");
+  const metLabel = pendiente ? "Pendiente" : [...new Set(metLabels)].join(" + ");
   const ventaId=nextId(DB.ventas);
   const detallePrincipal=cobro.detalles[0]||{};
 
@@ -1870,9 +2045,11 @@ function procesarVenta(){
     cantidad:cobro.detalles.reduce((a,x)=>a+x.cantidad,0),
     precio_unitario:cobro.detalles.length===1?detallePrincipal.precio_unitario:0,
     metodo:metLabel,
-    metodo_pago:pagos.length===1?pagos[0].tipo:"mixto",
-    pagos,
+    metodo_pago:pendiente?"pendiente":(pagosFinales.length===1?pagosFinales[0].tipo:"mixto"),
+    pagos:pagosFinales,
+    estado:pendiente?"pendiente":"pagada",
     subtotal:cobro.subtotal,
+    descuento_items_monto:cobro.descuentoItems,
     descuento_general:cobro.descuentoGeneral,
     descuento_general_monto:cobro.descuentoGeneralMonto,
     descuentoConjunto:cobro.descuentoConjunto,
@@ -1948,16 +2125,18 @@ function renderHistorialVentas(){
     metodo:v=>v.metodo,
     total:v=>v.total,
   });
-  const total=ventasActivas.reduce((a,v)=>a+v.total,0);
+  const ventasCobradas=ventasActivas.filter(v=>!ventaPendiente(v));
+  const pendientes=ventasActivas.filter(ventaPendiente);
+  const total=ventasCobradas.reduce((a,v)=>a+v.total,0);
   const hoy=ventasActivas.filter(v=>v.fecha===todayShort());
   document.getElementById("main-area").innerHTML=`
   <div style="display:flex;flex-direction:column;flex:1;">
     <div class="ph"><div><div class="pt">Historial de ventas</div><div class="ps">Registro completo</div></div></div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px 18px;">
       <div class="sc"><div class="sl">Ventas hoy</div><div class="sv">${hoy.length}</div><div class="ss">${fmt(hoy.reduce((a,v)=>a+v.total,0))}</div></div>
-      <div class="sc"><div class="sl">Ventas totales</div><div class="sv">${ventasActivas.length}</div></div>
-      <div class="sc"><div class="sl">Ticket promedio</div><div class="sv">${ventasActivas.length?fmt(Math.round(total/ventasActivas.length)):"$—"}</div></div>
-      <div class="sc"><div class="sl">Total acumulado</div><div class="sv">${fmt(total)}</div></div>
+      <div class="sc"><div class="sl">Ventas cobradas</div><div class="sv">${ventasCobradas.length}</div></div>
+      <div class="sc"><div class="sl">Pendientes</div><div class="sv" style="color:var(--am);">${pendientes.length}</div><div class="ss">${fmt(pendientes.reduce((a,v)=>a+v.total,0))}</div></div>
+      <div class="sc"><div class="sl">Total cobrado</div><div class="sv">${fmt(total)}</div></div>
     </div>
     <div style="padding:0 18px 18px;flex:1;overflow-y:auto;">
       <div class="tw"><table>
@@ -1969,9 +2148,9 @@ function renderHistorialVentas(){
           <td style="color:var(--gc);font-size:11px;">${v.hora}</td>
           <td style="font-size:11px;">${v.cliente}</td>
           <td style="font-size:11px;color:var(--gt);">${v.items}</td>
-          <td><span class="bd ${v.metodo==="Efectivo"?"bd-ok":v.metodo==="Cuenta cte."?"bd-bj":"bd-az"}" style="font-size:10px;">${v.metodo}</span></td>
+          <td><span class="bd ${ventaPendiente(v)?"bd-bj":v.metodo==="Efectivo"?"bd-ok":v.metodo==="Cuenta cte."?"bd-bj":"bd-az"}" style="font-size:10px;">${ventaPendiente(v)?"Pendiente":v.metodo}</span></td>
           <td style="font-weight:500;">${fmt(v.total)}</td>
-          <td><button class="btn-icon" onclick="editarVenta(${v.id}, true)" title="Editar"><i class="ti ti-pencil" style="font-size:11px;"></i></button></td>
+          <td><button class="btn-icon" onclick="editarVenta(${v.id}, true)" title="${ventaPendiente(v)?"Editar / cobrar":"Editar"}"><i class="ti ${ventaPendiente(v)?"ti-cash":"ti-pencil"}" style="font-size:11px;"></i></button></td>
         </tr>`).join("")}</tbody>
       </table></div>
     </div>
@@ -2260,18 +2439,22 @@ function recalcPagoCli(){
   const m=parseFloat(document.getElementById("pago-cli-monto").value)||0;
   const r=Math.max(0,c.deuda-m);
   document.getElementById("pago-cli-resto").textContent=fmt(r);
-  document.getElementById("pago-cli-tipo").textContent=r===0?"Pago completo":"Pago parcial";
+  document.getElementById("pago-cli-tipo").textContent=m>c.deuda?"Excedente a favor":r===0?"Pago completo":"Pago parcial";
 }
 function procesarPagoCli(){
   const id=document.getElementById("pago-cli").value;const c=DB.clientes.find(x=>x.id==id);if(!c)return;
   const m=parseFloat(document.getElementById("pago-cli-monto").value)||0;if(!m)return;
-  c.deuda=Math.max(0,c.deuda-m);
+  const aplicado=Math.min(m,Number(c.deuda)||0);
+  const excedente=Math.max(0,m-aplicado);
+  c.deuda=Math.max(0,c.deuda-aplicado);
+  if(excedente>0)c.saldoFavor=(Number(c.saldoFavor)||0)+excedente;
   if(c.deuda===0){c.estado="ok";c.vence="—";}
   const metodoPago=document.getElementById("pago-cli-metodo").value;
   const medio=metodoPago==="Transferencia"?"mercadopago":metodoPago==="Débito"?"debito":"efectivo";
-  c.historial.unshift({fecha:todayShort(),concepto:`Pago — ${metodoPago}`,monto:m,tipo:"abono",pts:0});
+  const movId=nextId(DB.movimientos);
+  c.historial.unshift({fecha:todayShort(),concepto:`Pago — ${metodoPago}${excedente>0?" (excedente a favor)":""}`,monto:m,tipo:"abono",pts:0,cliente_id:c.id,movimiento_id:movId});
   DB.cajas.principal[medio]=(DB.cajas.principal[medio]||0)+m;
-  DB.movimientos.unshift({id:nextId(DB.movimientos),fecha:todayShort(),fechaISO:toDateInput(),hora:hora(),tipo:"pago_cliente",concepto:`Cobro cta cte — ${c.nombre}`,caja:"principal",medio,monto:m,signo:1});
+  DB.movimientos.unshift({id:movId,fecha:todayShort(),fechaISO:toDateInput(),hora:hora(),tipo:"pago_cliente",concepto:`Cobro cta cte — ${c.nombre}`,caja:"principal",medio,monto:m,signo:1,cliente_id:c.id});
   persistDBSoon();
   closeOv("ov-pago-cliente");
   renderSidebar();
@@ -2545,9 +2728,16 @@ function guardarGasto(){
   const caja=document.getElementById("g-caja").value;
   const medio=document.getElementById("g-medio").value;
   const desc=cleanPlainText(document.getElementById("g-desc").value);
-  DB.gastos.unshift({id:nextId(DB.gastos),fecha,fechaISO,cat,desc,caja,medio,monto:m});
-  DB.cajas[caja][medio]=Math.max(0,(DB.cajas[caja][medio]||0)-m);
-  DB.movimientos.unshift({id:nextId(DB.movimientos),fecha,fechaISO,hora:hora(),tipo:"gasto",concepto:cat+(desc?` — ${desc}`:""),caja,medio,monto:m,signo:-1});
+  const medioCaja=cajaMedio(medio);
+  if(m>saldoCaja(caja,medioCaja)){
+    alert(`Saldo insuficiente en ${cajaLabel(caja)} (${medioLabel(medioCaja)}). Disponible: ${fmt(saldoCaja(caja,medioCaja))}.`);
+    return;
+  }
+  const movId=nextId(DB.movimientos);
+  const gastoId=nextId(DB.gastos);
+  DB.gastos.unshift({id:gastoId,movimiento_id:movId,fecha,fechaISO,cat,desc,caja,medio:medioCaja,monto:m});
+  ajustarSaldoCaja(caja,medioCaja,-m);
+  DB.movimientos.unshift({id:movId,fecha,fechaISO,hora:hora(),tipo:"gasto",concepto:cat+(desc?` — ${desc}`:""),caja,medio:medioCaja,monto:m,signo:-1,gasto_id:gastoId});
   persistDBSoon();
   closeOv("ov-gasto");renderSidebar();
   const sub=currentSub[currentMod];
@@ -2581,10 +2771,12 @@ function guardarTransferencia(){
   const fecha=shortFromISO(fechaISO);
   const disponible=DB.cajas[or]?.[medio]||0;
   if(!m||or===de||m>disponible)return;
-  DB.cajas[or][medio]=Math.max(0,(DB.cajas[or][medio]||0)-m);
-  DB.cajas[de][medio]=(DB.cajas[de][medio]||0)+m;
-  DB.transferencias.unshift({id:nextId(DB.transferencias),fecha,fechaISO,hora:hora(),origen:or,destino:de,medio,motivo:mo,monto:m});
-  DB.movimientos.unshift({id:nextId(DB.movimientos),fecha,fechaISO,hora:hora(),tipo:"transferencia",concepto:`Transferencia → ${de==="principal"?"Principal":"Reinversión"}`,caja:or,medio,monto:m,signo:-1});
+  ajustarSaldoCaja(or,medio,-m);
+  ajustarSaldoCaja(de,medio,m);
+  const transferenciaId=nextId(DB.transferencias);
+  const movId=nextId(DB.movimientos);
+  DB.transferencias.unshift({id:transferenciaId,movimiento_id:movId,fecha,fechaISO,hora:hora(),origen:or,destino:de,medio:cajaMedio(medio),motivo:mo,monto:m});
+  DB.movimientos.unshift({id:movId,fecha,fechaISO,hora:hora(),tipo:"transferencia",concepto:`Transferencia → ${de==="principal"?"Principal":"Reinversión"}`,caja:or,origen:or,destino:de,medio:cajaMedio(medio),monto:m,signo:-1,transferencia_id:transferenciaId});
   persistDBSoon();
   closeOv("ov-transf-cajas");renderSidebar();
   const sub=currentSub[currentMod];
@@ -2678,10 +2870,12 @@ function eliminarMovimiento(movimientoId) {
 
   const mov = DB.movimientos[idx];
 
-  // Revertir efecto en caja (signo:1 sumó → restamos; signo:-1 restó → sumamos)
-  if (mov.caja && DB.cajas[mov.caja] && mov.medio && DB.cajas[mov.caja][mov.medio] !== undefined) {
-    DB.cajas[mov.caja][mov.medio] -= mov.signo * mov.monto;
-  }
+  if(mov.tipo==="pago_cliente")ajustarClientePorPagoMovimiento(mov,-1);
+  ajustarCajaPorMovimiento(mov, -1);
+  const tr=transferenciaDeMovimiento(mov);
+  if(tr)DB.transferencias=DB.transferencias.filter(t=>t!==tr);
+  const gasto=gastoDeMovimiento(mov);
+  if(gasto)DB.gastos=DB.gastos.filter(g=>g!==gasto);
 
   DB.movimientos.splice(idx, 1);
   persistDBSoon();
@@ -2715,26 +2909,51 @@ function guardarEdicionMovimiento(movimientoId, datosEditados) {
 
   const mov = DB.movimientos[idx];
 
-  // Revertir efecto anterior en caja
-  if (mov.caja && DB.cajas[mov.caja] && DB.cajas[mov.caja][mov.medio] !== undefined) {
-    DB.cajas[mov.caja][mov.medio] -= mov.signo * mov.monto;
+  const tr=transferenciaDeMovimiento(mov);
+  if(mov.tipo==="pago_cliente")ajustarClientePorPagoMovimiento(mov,-1);
+  ajustarCajaPorMovimiento(mov, -1);
+  if(mov.tipo==="transferencia"){
+    const origen=mov.origen||tr?.origen||mov.caja;
+    const medioNuevo=cajaMedio(medio);
+    if(monto>saldoCaja(origen,medioNuevo)){
+      ajustarCajaPorMovimiento(mov,1);
+      alert(`Saldo insuficiente en ${cajaLabel(origen)} (${medioLabel(medioNuevo)}). Disponible: ${fmt(saldoCaja(origen,medioNuevo))}.`);
+      return;
+    }
+  }else if(mov.tipo!=="pago_cliente" && (mov.tipo==="gasto" || parseInt(signo,10)<0) && monto>saldoCaja(mov.caja,cajaMedio(medio))){
+    ajustarCajaPorMovimiento(mov,1);
+    if(mov.tipo==="pago_cliente")ajustarClientePorPagoMovimiento(mov,1);
+    alert(`Saldo insuficiente en ${cajaLabel(mov.caja)} (${medioLabel(medio)}). Disponible: ${fmt(saldoCaja(mov.caja,medio))}.`);
+    return;
   }
 
-  const nuevoSigno = parseInt(signo, 10);
+  const nuevoSigno = mov.tipo==="transferencia" || mov.tipo==="gasto" ? -1 : mov.tipo==="pago_cliente" ? 1 : parseInt(signo, 10);
   Object.assign(mov, {
     monto,
     signo: nuevoSigno,
-    medio,
+    medio:cajaMedio(medio),
     concepto,
     fechaISO,
     fecha: shortFromISO(fechaISO),
     editado_en: new Date().toISOString()
   });
-
-  // Aplicar nuevo efecto en caja
-  if (mov.caja && DB.cajas[mov.caja] && DB.cajas[mov.caja][medio] !== undefined) {
-    DB.cajas[mov.caja][medio] += nuevoSigno * monto;
+  if(tr){
+    Object.assign(tr,{
+      monto,
+      medio:cajaMedio(medio),
+      fechaISO,
+      fecha: shortFromISO(fechaISO),
+      motivo: concepto || tr.motivo || "Transferencia",
+      editado_en:new Date().toISOString()
+    });
+    mov.transferencia_id=tr.id;
+    mov.origen=tr.origen;
+    mov.destino=tr.destino;
   }
+  sincronizarGastoDesdeMovimiento(mov);
+
+  ajustarCajaPorMovimiento(mov, 1);
+  if(mov.tipo==="pago_cliente")ajustarClientePorPagoMovimiento(mov,1);
 
   persistDBSoon();
   closeOv("ov-editar-mov");
@@ -2760,39 +2979,101 @@ function _confirmarEdicionMovimiento() {
    MÓDULO ANÁLISIS
 ══════════════════════════════════════════ */
 function renderAnalisisVentas(){
+  const now=new Date();
+  const mesActual=toDateInput().slice(0,7);
+  const ventasCobradas=DB.ventas.filter(v=>!v.eliminada&&!ventaPendiente(v));
+  const ventasMes=ventasCobradas.filter(v=>(v.fechaISO||fechaISOFromVenta(v)).slice(0,7)===mesActual);
+  const costoItem=it=>{
+    const p=DB.productos.find(x=>x.id===it.pid);
+    return (Number(p?.costo)||0)*(Number(it.cantidad)||1);
+  };
+  const costoVentas=ventas=>ventas.reduce((a,v)=>a+normalizarItemsVenta(v).reduce((b,it)=>b+costoItem(it),0),0);
+  const ventasBrutas=ventasMes.reduce((a,v)=>a+(Number(v.subtotal)||Number(v.total)||0),0);
+  const ventasNetas=ventasMes.reduce((a,v)=>a+(Number(v.total)||0),0);
+  const margenBruto=ventasNetas-costoVentas(ventasMes);
+  const gastosFijos=DB.gastos.filter(g=>(g.fechaISO||"").slice(0,7)===mesActual).reduce((a,g)=>a+(Number(g.monto)||0),0);
+  const flujoLibre=margenBruto-gastosFijos;
+  const cajaAcumulada=totalCaja("principal")+totalCaja("reinversion");
+  const stockCosto=DB.productos.reduce((a,p)=>a+(Number(p.costo)||0)*stockTotal(p),0);
+  const deudasClientes=DB.clientes.reduce((a,c)=>a+(Number(c.deuda)||0),0);
+  const patrimonio=stockCosto+cajaAcumulada+deudasClientes;
+  const monthKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  const monthLabel=k=>{const [y,m]=k.split("-");return `${m}/${String(y).slice(2)}`;};
+  const meses=Array.from({length:6},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-5+i,1);return monthKey(d);});
+  const serie=meses.map(m=>{
+    const ventas=ventasCobradas.filter(v=>(v.fechaISO||fechaISOFromVenta(v)).slice(0,7)===m);
+    const neto=ventas.reduce((a,v)=>a+(Number(v.total)||0),0);
+    return {label:monthLabel(m),ventas:neto,margen:neto-costoVentas(ventas)};
+  });
+  const maxSerie=Math.max(1,...serie.flatMap(x=>[x.ventas,x.margen]));
+  const bars=serie.map((x,i)=>{
+    const x0=28+i*48;
+    const hV=Math.max(2,Math.round((x.ventas/maxSerie)*110));
+    const hM=Math.max(2,Math.round((Math.max(0,x.margen)/maxSerie)*110));
+    return `<g><rect x="${x0}" y="${132-hV}" width="16" height="${hV}" rx="3" fill="var(--az)"/><rect x="${x0+18}" y="${132-hM}" width="16" height="${hM}" rx="3" fill="var(--vd)"/><text x="${x0+17}" y="150" text-anchor="middle" font-size="9" fill="var(--gc)">${x.label}</text></g>`;
+  }).join("");
+  const gastosPorCat={};
+  DB.gastos.filter(g=>(g.fechaISO||"").slice(0,7)===mesActual).forEach(g=>{gastosPorCat[g.cat]=(gastosPorCat[g.cat]||0)+(Number(g.monto)||0);});
+  const gastosRows=Object.entries(gastosPorCat).sort((a,b)=>b[1]-a[1]);
+  const maxGasto=Math.max(1,...gastosRows.map(x=>x[1]));
+  const patrimonioData=[
+    ["Stock",stockCosto,"var(--az)"],
+    ["Caja",cajaAcumulada,"var(--vd)"],
+    ["Deudas",deudasClientes,"var(--am)"],
+  ];
+  const maxPat=Math.max(1,...patrimonioData.map(x=>x[1]));
   const calcVentas=()=>{
     const c={};
-    DB.ventas.filter(v=>!v.eliminada).forEach(v=>{
+    ventasCobradas.forEach(v=>{
       const items=normalizarItemsVenta(v);
-      if(items.length){
-        items.forEach(it=>{if(it.pid)c[it.pid]=(c[it.pid]||0)+(it.cantidad||1);});
-      }else if(v.producto){
-        c[v.producto]=(c[v.producto]||0)+(v.cantidad||1);
-      }
+      items.forEach(it=>{if(it.pid)c[it.pid]=(c[it.pid]||0)+(it.cantidad||1);});
     });
     return c;
   };
   const ventasPorProducto=calcVentas();
   const productos=DB.productos.map(p=>({p,stock:stockTotal(p),ventas:ventasPorProducto[p.id]||p.ventasHistoricas||0}));
-  const reponer=productos.filter(x=>x.ventas>=4&&x.stock<=2).sort((a,b)=>b.ventas-a.ventas).slice(0,20);
-  const oferta=productos.filter(x=>x.ventas<=1&&x.stock>=5).sort((a,b)=>b.stock-a.stock).slice(0,20);
+  const reponer=productos.filter(x=>x.ventas>=4&&x.stock<=2).sort((a,b)=>b.ventas-a.ventas).slice(0,10);
+  const oferta=productos.filter(x=>x.ventas<=1&&x.stock>=5).sort((a,b)=>b.stock-a.stock).slice(0,10);
   document.getElementById("main-area").innerHTML=`
   <div style="display:flex;flex-direction:column;flex:1;">
-    <div class="ph"><div><div class="pt">Análisis de rotación</div><div class="ps">Reposición y ofertas sugeridas según ventas + stock</div></div></div>
+    <div class="ph"><div><div class="pt">Análisis del negocio</div><div class="ps">Ventas, margen, caja, patrimonio y rotación</div></div></div>
     <div class="scroll">
-      <div class="stats3" style="margin-bottom:14px;">
-        <div class="sc"><div class="sl">Productos analizados</div><div class="sv">${productos.length}</div></div>
-        <div class="sc"><div class="sl">Sugeridos para reponer</div><div class="sv" style="color:var(--vd);">${reponer.length}</div></div>
-        <div class="sc"><div class="sl">Sugeridos para oferta</div><div class="sv" style="color:var(--am);">${oferta.length}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+        <div class="sc"><div class="sl">Ventas brutas</div><div class="sv">${fmt(ventasBrutas)}</div><div class="ss">Mes actual</div></div>
+        <div class="sc"><div class="sl">Margen bruto</div><div class="sv" style="color:${margenBruto>=0?"var(--vd)":"var(--rj)"};">${fmt(margenBruto)}</div><div class="ss">${ventasNetas?Math.round(margenBruto/ventasNetas*100):0}% sobre ventas netas</div></div>
+        <div class="sc"><div class="sl">Gastos fijos</div><div class="sv" style="color:var(--rj);">${fmt(gastosFijos)}</div><div class="ss">Gastos registrados</div></div>
+        <div class="sc"><div class="sl">Flujo libre mensual</div><div class="sv" style="color:${flujoLibre>=0?"var(--vd)":"var(--rj)"};">${fmt(flujoLibre)}</div><div class="ss">Margen - gastos</div></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;">
+        <div class="sc" style="background:var(--ng);"><div class="sl" style="color:var(--gc);">Caja acumulada</div><div class="sv" style="color:var(--cr);">${fmt(cajaAcumulada)}</div><div class="ss" style="color:var(--gc);">Principal + reinversión</div></div>
+        <div class="sc" style="background:var(--ng);"><div class="sl" style="color:var(--gc);">Patrimonio del negocio</div><div class="sv" style="color:var(--cr);">${fmt(patrimonio)}</div><div class="ss" style="color:var(--gc);">Stock al costo + caja + deudas a cobrar</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-bottom:14px;">
+        <div class="sc" style="padding:14px;">
+          <div class="sect-title">Ventas y margen últimos 6 meses</div>
+          <svg viewBox="0 0 320 160" style="width:100%;height:190px;display:block;">
+            <line x1="22" y1="132" x2="308" y2="132" stroke="var(--crb)"/>
+            ${bars}
+          </svg>
+          <div style="display:flex;gap:12px;font-size:11px;color:var(--gt);"><span><span class="dot" style="background:var(--az);"></span> Ventas</span><span><span class="dot" style="background:var(--vd);"></span> Margen</span></div>
+        </div>
+        <div class="sc" style="padding:14px;">
+          <div class="sect-title">Patrimonio</div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+            ${patrimonioData.map(([label,val,color])=>`<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${label}</span><strong>${fmt(val)}</strong></div><div style="height:9px;background:var(--crd);border-radius:999px;overflow:hidden;"><div style="width:${Math.round(val/maxPat*100)}%;height:100%;background:${color};"></div></div></div>`).join("")}
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:.85fr 1.15fr;gap:14px;">
+        <div class="sc" style="padding:14px;">
+          <div class="sect-title">Gastos por categoría</div>
+          ${gastosRows.length?gastosRows.map(([cat,val])=>`<div style="margin-top:9px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span>${cat}</span><strong>${fmt(val)}</strong></div><div style="height:8px;background:var(--crd);border-radius:999px;overflow:hidden;"><div style="width:${Math.round(val/maxGasto*100)}%;height:100%;background:var(--rj);"></div></div></div>`).join(""):`<div style="padding:20px;text-align:center;color:var(--gc);font-size:12px;">Sin gastos registrados este mes</div>`}
+        </div>
         <div>
           <div class="sect-title">Reponer primero</div>
           <div class="tw"><table><thead><tr><th>Producto</th><th>Ventas</th><th>Stock</th></tr></thead><tbody>
             ${reponer.map(x=>`<tr><td>${x.p.nombre}</td><td>${x.ventas}</td><td>${x.stock}</td></tr>`).join("")||`<tr><td colspan="3" style="text-align:center;color:var(--gc);">Sin urgencias de reposición</td></tr>`}
           </tbody></table></div>
-        </div>
-        <div>
           <div class="sect-title">Evaluar oferta</div>
           <div class="tw"><table><thead><tr><th>Producto</th><th>Ventas</th><th>Stock</th></tr></thead><tbody>
             ${oferta.map(x=>`<tr><td>${x.p.nombre}</td><td>${x.ventas}</td><td>${x.stock}</td></tr>`).join("")||`<tr><td colspan="3" style="text-align:center;color:var(--gc);">Sin candidatos claros</td></tr>`}
