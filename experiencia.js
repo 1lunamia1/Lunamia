@@ -1,5 +1,51 @@
 /* Búsquedas, navegación y accesibilidad sin dependencias externas. */
 const filtrosVista={};
+const paginasVista={};
+function rangoPaginacion(total,pagina=1,tamano=25){
+  total=Number.isSafeInteger(total)&&total>0?total:0;
+  tamano=[25,50,100].includes(Number(tamano))?Number(tamano):25;
+  const paginas=Math.max(1,Math.ceil(total/tamano));
+  pagina=Number.isSafeInteger(pagina)?Math.max(1,Math.min(pagina,paginas)):1;
+  return {total,pagina,tamano,paginas,inicio:(pagina-1)*tamano,fin:Math.min(pagina*tamano,total)};
+}
+function crearPaginador(id,records,anchor,onChange){
+  const state=paginasVista[id]??={pagina:1,tamano:25};
+  const bar=document.createElement("nav");bar.className="pagination-toolbar";bar.setAttribute("aria-label","Páginas de registros");
+  bar.innerHTML=`<span class="pagination-status" role="status" aria-live="polite"></span><label>Por página <select aria-label="Registros por página"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label><div class="pagination-buttons"><button type="button" class="btn btn-out btn-sm" data-page="first">Primera</button><button type="button" class="btn btn-out btn-sm" data-page="previous">Anterior</button><button type="button" class="btn btn-out btn-sm" data-page="next">Siguiente</button><button type="button" class="btn btn-out btn-sm" data-page="last">Última</button></div>`;
+  anchor.after(bar);bar.querySelector("select").value=state.tamano;
+  let actual=rangoPaginacion(0,state.pagina,state.tamano);
+  const scroll=()=>{const area=document.getElementById("main-area");for(const el of area.querySelectorAll('.scroll,.data-scroll,.tw,.pdv-left'))el.scrollTop=0;};
+  bar.querySelector("select").addEventListener("change",ev=>{state.tamano=Number(ev.target.value);state.pagina=1;onChange();scroll();});
+  bar.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    state.pagina={first:1,previous:actual.pagina-1,next:actual.pagina+1,last:actual.paginas}[b.dataset.page];onChange();scroll();
+  }));
+  return {aplicar(coincidencias,reset=false){
+    if(reset)state.pagina=1;
+    actual=rangoPaginacion(coincidencias.length,state.pagina,state.tamano);state.pagina=actual.pagina;
+    const visibles=new Set(coincidencias.slice(actual.inicio,actual.fin));records.forEach(r=>r.hidden=!visibles.has(r));
+    bar.querySelector(".pagination-status").textContent=actual.total?`${actual.inicio+1}–${actual.fin} de ${actual.total} · Página ${actual.pagina} de ${actual.paginas}`:"0 registros";
+    bar.querySelectorAll("button").forEach(b=>b.disabled=["first","previous"].includes(b.dataset.page)?actual.pagina===1:actual.pagina===actual.paginas);
+    bar.hidden=records.length<=25;
+  }};
+}
+function paginarVistaNativa(id,firma){
+  const area=document.getElementById("main-area"),table=area?.querySelector(".tw"),records=[...area.querySelectorAll("tbody tr")].filter(r=>!r.querySelector("td[colspan]"));
+  if(!table||area.querySelector(".pagination-toolbar"))return;
+  const container=table.parentElement;container.classList.add("data-scroll");
+  let pager;
+  const apply=()=>pager.aplicar(records);
+  pager=crearPaginador(id,records,container.previousElementSibling||area.querySelector(".ph"),apply);
+  const state=paginasVista[id];if(state.firma!==firma){state.pagina=1;state.firma=firma;}apply();
+}
+function paginarCatalogo(){
+  const grid=document.getElementById("prod-grid"),anchor=document.getElementById("pdv-empty-state");if(!grid||!anchor)return;
+  document.getElementById("catalogo-pagination")?.remove();
+  const records=[...grid.children];let pager;
+  pager=crearPaginador("catalogo",records,anchor,()=>pager.aplicar(records));
+  const bar=anchor.nextElementSibling;bar.id="catalogo-pagination";bar.setAttribute("aria-label","Páginas de productos");
+  const state=paginasVista.catalogo,firma=JSON.stringify([pdvFiltQ,pdvFiltCat,pdvFiltGen]);
+  if(state.firma!==firma){state.pagina=1;state.firma=firma;}pager.aplicar(records);
+}
 const BUSQUEDAS={
   renderHistorialVentas:{id:"ventas",placeholder:"Buscar venta, cliente, producto o método...",fechas:true},
   renderDevoluciones:{id:"devoluciones",placeholder:"Buscar venta, cliente, producto o motivo...",fechas:true},
@@ -12,7 +58,7 @@ const BUSQUEDAS={
   renderProvLista:{id:"proveedores",placeholder:"Buscar proveedor, rubro o teléfono...",selector:'[onclick^="verFichaProv("]'},
   renderCuentaCorriente:{id:"cuentas",placeholder:"Buscar cliente o teléfono...",selector:"[data-search-record]"},
   renderFidelizacion:{id:"fidelizacion",placeholder:"Buscar cliente o nivel..."},
-  renderAlertasCli:{id:"alertas",placeholder:"Buscar cliente, deuda o vencimiento...",selector:".notif"},
+  renderAlertasCli:{id:"alertas",placeholder:"Buscar cliente, deuda o vencimiento...",selector:"[data-search-record]"},
   renderCategoriasPage:{id:"categorias",placeholder:"Buscar categoría o código..."},
   renderPagosClientes:{id:"pagos-clientes",placeholder:"Buscar cliente, importe o estado...",fechas:true},
   renderIngresosTarjetaPendientes:{id:"tarjetas",placeholder:"Buscar venta, cobro o cliente...",fechas:true},
@@ -33,7 +79,8 @@ function agregarBusqueda(cfg){
   const container=area.querySelector(".scroll")||area.querySelector(".tw")?.parentElement||header.parentElement;
   container.appendChild(empty);
   const details=[...area.querySelectorAll("details")],initialOpen=new Map(details.map(d=>[d,d.open]));
-  const apply=()=>{
+  let pager;
+  const apply=(reset=false)=>{
     state.q=input.value;state.desde=desde?.value||"";state.hasta=hasta?.value||"";
     const terms=normalizarBusqueda(state.q).split(/\s+/).filter(Boolean);
     const rangoInvalido=state.desde&&state.hasta&&state.desde>state.hasta;
@@ -51,6 +98,7 @@ function agregarBusqueda(cfg){
       const match=!rangoInvalido&&terms.every(t=>text.includes(t))&&(!state.desde||fecha>=state.desde)&&(!state.hasta||(fecha&&fecha<=state.hasta));
       row.hidden=!match;if(match)visible++;
     }
+    pager.aplicar(records.filter(r=>!r.hidden),reset);
     for(const group of [...details,...area.querySelectorAll("[data-search-group]")]){
       const contained=records.filter(r=>group.contains(r));
       if(!contained.length)continue;
@@ -61,8 +109,9 @@ function agregarBusqueda(cfg){
     empty.textContent=rangoInvalido?"Revisá el rango de fechas: Desde no puede ser posterior a Hasta.":records.length?"No hay coincidencias. Probá otro texto o limpiá los filtros.":"Todavía no hay registros en esta sección.";
     empty.hidden=visible>0;
   };
-  input.addEventListener("input",apply);desde?.addEventListener("change",apply);hasta?.addEventListener("change",apply);
-  toolbar.querySelector("button").addEventListener("click",()=>{input.value="";if(desde)desde.value="";if(hasta)hasta.value="";apply();input.focus();});
+  pager=crearPaginador(cfg.id,records,toolbar,()=>apply());
+  input.addEventListener("input",()=>apply(true));desde?.addEventListener("change",()=>apply(true));hasta?.addEventListener("change",()=>apply(true));
+  toolbar.querySelector("button").addEventListener("click",()=>{input.value="";if(desde)desde.value="";if(hasta)hasta.value="";apply(true);input.focus();});
   apply();
 }
 function filtrarOpcionesBuscables(opciones,datos,consulta){
@@ -152,6 +201,7 @@ function aplicarAccesibilidad(root=document){
 }
 function ajustarVista(){
   const area=document.getElementById("main-area");if(!area)return;
+  area.querySelectorAll('[style*="overflow-y:auto"],[style*="overflow-y: auto"]').forEach(el=>el.classList.add("data-scroll"));
   area.querySelectorAll('[style*="grid-template-columns"]').forEach(grid=>{
     if(grid.style.display!=="grid")return;
     const columns=Number(grid.style.gridTemplateColumns.match(/repeat\((\d+)/)?.[1])||grid.style.gridTemplateColumns.split(" ").length;
@@ -191,12 +241,16 @@ function actualizarAtajosPDV(){
 }
 function instalarExperiencia(){
   const nav=renderLeftNav;window.renderLeftNav=function(...args){const result=nav.apply(this,args);aplicarAccesibilidad(document.getElementById("leftnav"));return result;};
-  for(const name of [...Object.keys(BUSQUEDAS),"renderProdLista","renderClientesLista","renderPDV","renderCajaResumen","renderItemsEdicion"]){
+  for(const name of [...Object.keys(BUSQUEDAS),"renderProdLista","renderClientesLista","renderPDV","renderProdGrid","renderCajaResumen","renderCajaCierre","renderItemsEdicion"]){
     const original=window[name];if(typeof original!=="function")continue;
     window[name]=function(...args){
       const active=document.activeElement,focusId=active?.id,start=active?.selectionStart,end=active?.selectionEnd;
       const result=original.apply(this,args);
       if(BUSQUEDAS[name])agregarBusqueda(BUSQUEDAS[name]);
+      if(name==="renderProdLista")paginarVistaNativa("productos",JSON.stringify([prodFiltQ,prodFiltCat,prodFiltGen,prodFiltSt,tableSort.productos]));
+      if(name==="renderClientesLista")paginarVistaNativa("clientes",JSON.stringify([cliFiltQ,cliFiltEst,cliFiltNiv,tableSort.clientes]));
+      if(name==="renderCajaCierre")paginarVistaNativa("cierres","");
+      if(name==="renderProdGrid")paginarCatalogo();
       if(name==="renderCajaResumen")agregarAccionCabecera("Mover fondos",abrirTransfCajas);
       if(name==="renderCajaMovimientos"){agregarAccionCabecera("Registrar gasto",abrirGasto);agregarAccionCabecera("Mover fondos",abrirTransfCajas);}
       if(name==="renderHistorialVentas")agregarAccionCabecera("Nueva venta",abrirVenta);

@@ -1041,13 +1041,12 @@ function renderIngVarRowsForProd(prov){
   const prev=new Map(ingRowsData.map(r=>[r.cod,{...r}]));
   const c=document.getElementById("ing-var-rows");
   if(!prov){c.innerHTML=`<div style="text-align:center;padding:20px;color:var(--gc);font-size:12px;">Seleccioná un proveedor primero</div>`;return;}
-  const q=ingProdQ.trim().toLowerCase();
-  const productos=productosDeProveedor(prov)
-    .filter(p=>!ingPinnedProdId||p.id===ingPinnedProdId)
-    .filter(p=>!q||normalizarBusqueda(p.nombre).includes(q)||normalizarBusqueda(p.codigo).includes(q)||p.variantes.some(v=>normalizarBusqueda(v.cod).includes(q))||p.cat.toLowerCase().includes(q));
-  ingRowsData=productos.flatMap(p=>p.variantes.map(v=>{
+  const q=normalizarBusqueda(ingProdQ);
+  const todosProductos=productosDeProveedor(prov).filter(p=>!ingPinnedProdId||p.id===ingPinnedProdId);
+  const productos=todosProductos.filter(p=>!q||normalizarBusqueda(p.nombre).includes(q)||normalizarBusqueda(p.codigo).includes(q)||p.variantes.some(v=>normalizarBusqueda(v.cod).includes(q))||normalizarBusqueda(p.cat).includes(q));
+  ingRowsData=todosProductos.flatMap(p=>p.variantes.map(v=>{
     const old=prev.get(v.cod)||{};
-    return {...v,prodNombre:p.nombre,prodId:p.id,costo:p.costo,cantIngreso:old.cantIngreso||0,nuevoCosto:old.nuevoCosto||p.costo};
+    return {...v,prodNombre:p.nombre,prodId:p.id,costo:p.costo,cantIngreso:old.cantIngreso||0,nuevoCosto:old.nuevoCosto??p.costo};
   }));
   c.innerHTML=`
     <div style="position:relative;margin-bottom:10px;">
@@ -1066,13 +1065,14 @@ function renderIngVarRowsForProd(prov){
             <div><div style="font-size:12px;font-weight:500;">${varianteLabel(r)}</div><div style="font-size:10px;color:var(--gc);">${r.cod}</div></div>
             <span style="font-size:12px;color:var(--gc);text-align:center;">${r.stock}</span>
             <input type="number" min="0" value="${r.cantIngreso||0}" id="ingc-${i}" oninput="ingRowsData[${i}].cantIngreso=Number(this.value);calcIngPago()" style="text-align:center;"/>
-            <input type="number" min="0" value="${r.nuevoCosto??p.costo}" id="ingp-${i}" oninput="ingRowsData[${i}].nuevoCosto=Number(this.value)"/>
+            <input type="number" min="0" value="${r.nuevoCosto??p.costo}" id="ingp-${i}" oninput="ingRowsData[${i}].nuevoCosto=Number(this.value);calcIngPago()"/>
             <button class="btn-icon" title="Quitar cantidad de ingreso" aria-label="Quitar cantidad de ingreso" style="width:26px;height:26px;" onclick="ingRowsData[${i}].cantIngreso=0;document.getElementById('ingc-${i}').value=0;calcIngPago()"><i class="ti ti-x" aria-hidden="true" style="font-size:11px;"></i></button>
           </div>`).join("")}
       </div>`;
     }).join("")||`<div style="text-align:center;padding:20px;color:var(--gc);font-size:12px;">Sin productos para ese proveedor o busqueda.</div>`}`;
   const search=document.getElementById("ing-prod-search");
   if(search&&activeSearch){search.focus();const pos=caret??search.value.length;search.setSelectionRange(pos,pos);}
+  calcIngPago();
 }
 function addIngVarRow(){
   ingProdQ="";
@@ -1113,7 +1113,7 @@ function confirmarIngreso(){
   }
   items.forEach(r=>{
     const prod=DB.productos.find(x=>x.id===r.prodId);
-    if(prod){const v=prod.variantes.find(x=>x.cod===r.cod);if(v)v.stock+=r.cantIngreso;if(r.nuevoCosto)prod.costo=r.nuevoCosto;}
+    if(prod){const v=prod.variantes.find(x=>x.cod===r.cod);if(v)v.stock+=r.cantIngreso;prod.costo=r.nuevoCosto;}
   });
   if(metodo!=="cuenta_prov"&&medio){ajustarSaldoCaja(caja,medio,-total);}
   const newId=nextId(DB.proveedores.flatMap(p=>p.compras));
@@ -1187,7 +1187,7 @@ function renderPDV(){
         </div>
 
         <!-- Selector de cliente -->
-        <div style="padding:7px 11px;border-bottom:0.5px solid var(--crb);background:var(--cr);">
+        <div class="cart-customer" style="padding:7px 11px;border-bottom:0.5px solid var(--crb);background:var(--cr);">
           <div id="pdv-cliente-info" style="font-size:11px;margin-bottom:5px;"></div>
           <select id="cli-sel" style="height:30px;font-size:12px;" onchange="onCliSelChange()">
             <option value="">Consumidor final</option>
@@ -1196,10 +1196,11 @@ function renderPDV(){
         </div>
 
         <!-- Items del carrito -->
-        <div class="cart-body" id="cart-body"></div>
+        <div class="cart-tools"><span id="cart-count" role="status"></span><button type="button" class="btn btn-out btn-sm" onclick="abrirDetalleCarrito()">Ver detalle</button></div>
+        <div class="cart-body" id="cart-body" tabindex="0" role="region" aria-label="Productos de la venta; desplazá para ver todos los ítems"></div>
 
         <!-- Totales + botón cobrar -->
-        <div style="padding:11px 13px;border-top:0.5px solid var(--crb);background:var(--crd);">
+        <div class="cart-summary" style="padding:11px 13px;border-top:0.5px solid var(--crb);background:var(--crd);">
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gt);margin-bottom:5px;">
             <span>Subtotal</span><span id="cf-sub">$0</span>
           </div>
@@ -1300,33 +1301,40 @@ function addToCarrito(pid, vcod){
   renderCarrito();closeOv("ov-var");
 }
 
+function importeItemCarrito(item){return redondearImporte(Math.max(0,item.precio*item.qty*(1-(Number(item.descuentoItemPct)||0)/100)));}
 function renderCarrito(){
   const el=document.getElementById("cart-body");if(!el)return;
-  const cart=carrito();
-  if(!cart.items.length){el.innerHTML=`<div class="cart-empty"><i class="ti ti-shopping-cart" style="font-size:26px;opacity:.25;"></i><span style="font-size:12px;">Sin productos</span></div>`;recalcPDV();return;}
-  el.innerHTML=cart.items.map((item,i)=>`
-    <div class="cart-item">
-      <div class="ci-info">
-        <div class="ci-name">${item.nombre}</div>
-        <div class="ci-var">${varianteLabel(item)}</div>
-        <div style="display:flex;align-items:center;gap:5px;margin-top:4px;">
-          <button class="qb" aria-label="Reducir cantidad de ${escapeHTML(item.nombre)}" onclick="cambiarQty(${i},-1)">−</button>
-          <span style="font-size:12px;font-weight:500;min-width:14px;text-align:center;">${item.qty}</span>
-          <button class="qb" aria-label="Aumentar cantidad de ${escapeHTML(item.nombre)}" onclick="cambiarQty(${i},1)">+</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:10px;color:var(--gc);">
-          <span>Desc.</span>
-          <input type="number" min="0" max="100" aria-label="Descuento porcentual de ${escapeHTML(item.nombre)}" value="${Number(item.descuentoItemPct)||0}" oninput="cambiarDescItem(${i},this.value)" style="width:54px;height:24px;padding:2px 5px;font-size:11px;text-align:right;"/>
-          <span>%</span>
-        </div>
-      </div>
-      <div>
-        <div style="font-size:12px;font-weight:500;">${fmt(Math.max(0,(item.precio*item.qty)-((item.precio*item.qty)*(Number(item.descuentoItemPct)||0)/100)))}</div>
-        ${Number(item.descuentoItemPct)>0?`<div style="font-size:10px;color:var(--vd);text-align:right;">-${Number(item.descuentoItemPct)||0}%</div>`:""}
-        <button class="btn-icon" title="Quitar producto del carrito" aria-label="Quitar ${escapeHTML(item.nombre)} del carrito" style="width:22px;height:22px;margin-top:4px;" onclick="carrito().items.splice(${i},1);renderCarrito()"><i class="ti ti-x" aria-hidden="true" style="font-size:11px;"></i></button>
+  const cart=carrito(),top=el.scrollTop,anteriores=Number(el.dataset?.count)||0;
+  const count=document.getElementById("cart-count");
+  if(count)count.textContent=`${cart.items.length} productos · ${cart.items.reduce((n,it)=>n+it.qty,0)} unidades`;
+  if(!cart.items.length)el.innerHTML=`<div class="cart-empty"><i class="ti ti-shopping-cart" aria-hidden="true" style="font-size:26px;opacity:.25;"></i><span style="font-size:12px;">Sin productos</span></div>`;
+  else el.innerHTML=cart.items.map((item,i)=>`
+    <div class="cart-item" data-cart-index="${i}">
+      <div class="cart-line-heading"><div class="ci-name" title="${escapeHTML(item.nombre)}">${escapeHTML(item.nombre)}</div><strong id="cart-line-total-${i}">${fmt(importeItemCarrito(item))}</strong></div>
+      <div class="cart-line-controls">
+        <span class="ci-var" title="${escapeHTML(varianteLabel(item))}">${escapeHTML(varianteLabel(item))}</span>
+        <div class="cart-quantity"><button class="qb" aria-label="Reducir cantidad de ${escapeHTML(item.nombre)}" onclick="cambiarQty(${i},-1)">−</button><span>${item.qty}</span><button class="qb" aria-label="Aumentar cantidad de ${escapeHTML(item.nombre)}" onclick="cambiarQty(${i},1)">+</button></div>
+        <label class="cart-discount">Desc. <input type="number" min="0" max="100" aria-label="Descuento porcentual de ${escapeHTML(item.nombre)}" value="${Number(item.descuentoItemPct)||0}" oninput="cambiarDescItem(${i},this.value)"/>%</label>
+        <button class="btn-icon" title="Quitar producto del carrito" aria-label="Quitar ${escapeHTML(item.nombre)} del carrito" onclick="carrito().items.splice(${i},1);renderCarrito()"><i class="ti ti-x" aria-hidden="true"></i></button>
       </div>
     </div>`).join("");
+  if(el.dataset)el.dataset.count=String(cart.items.length);
+  el.scrollTop=cart.items.length>anteriores?el.scrollHeight:top;
   recalcPDV();
+  if(typeof actualizarDetalleCarrito==="function")actualizarDetalleCarrito();
+}
+let detalleCarritoId=null;
+function abrirDetalleCarrito(){
+  if(!document.getElementById("ov-detalle-carrito"))document.body.insertAdjacentHTML("beforeend",`<div class="ov" id="ov-detalle-carrito"><div class="modal" style="max-width:960px;"><div class="mh"><span class="mt">Detalle de la venta</span><button type="button" class="btn-ghost" aria-label="Cerrar" onclick="closeOv('ov-detalle-carrito')"><i class="ti ti-x" aria-hidden="true"></i></button></div><div class="mc cart-detail-body" id="cart-detail-body"></div><div class="mf"><strong id="cart-detail-total" style="margin-right:auto;"></strong><button type="button" class="btn btn-out" onclick="closeOv('ov-detalle-carrito')">Volver a la venta</button><button type="button" class="btn btn-ng" id="cart-detail-charge" onclick="closeOv('ov-detalle-carrito');abrirCobrar()">Cobrar</button></div></div></div>`);
+  detalleCarritoId=carrito().id;actualizarDetalleCarrito(true);recalcPDV();openOv("ov-detalle-carrito");
+}
+function actualizarDetalleCarrito(forzar=false){
+  const ov=document.getElementById("ov-detalle-carrito");if(!ov||(!forzar&&!ov.classList.contains("on")))return;
+  if(detalleCarritoId!==carrito().id){closeOv(ov.id);return;}
+  const body=document.getElementById("cart-detail-body"),top=body.scrollTop,left=body.scrollLeft;
+  body.innerHTML=carrito().items.length?`<table class="cart-detail-table"><thead><tr><th>#</th><th>Producto / variante</th><th>Cantidad</th><th>Descuento</th><th>Importe</th><th>Acción</th></tr></thead><tbody>${carrito().items.map((item,i)=>`<tr><td>${i+1}</td><td>${escapeHTML(item.nombre)}<small>${escapeHTML(varianteLabel(item))} · ${escapeHTML(item.cod)}</small></td><td><div class="cart-quantity"><button class="qb" aria-label="Reducir cantidad de ${escapeHTML(item.nombre)}" onclick="cambiarQty(${i},-1)">−</button><span>${item.qty}</span><button class="qb" aria-label="Aumentar cantidad de ${escapeHTML(item.nombre)}" onclick="cambiarQty(${i},1)">+</button></div></td><td><input type="number" min="0" max="100" aria-label="Descuento porcentual de ${escapeHTML(item.nombre)}" value="${Number(item.descuentoItemPct)||0}" oninput="cambiarDescItem(${i},this.value)"/> %</td><td id="cart-detail-line-${i}">${fmt(importeItemCarrito(item))}</td><td><button class="btn-icon" title="Quitar producto" aria-label="Quitar ${escapeHTML(item.nombre)}" onclick="carrito().items.splice(${i},1);renderCarrito()"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>`).join("")}</tbody></table>`:`<div class="empty-state">La venta no tiene productos.</div>`;
+  body.scrollTop=top;body.scrollLeft=left;
+  document.getElementById("cart-detail-charge").disabled=!carrito().items.length;
 }
 
 function cambiarDescItem(i,value){
@@ -1359,6 +1367,8 @@ function recalcPDV(){
   if(d)d.textContent=`−${fmt(desc)}`;
   if(t)t.textContent=fmt(cobro.total ?? sub);
   const btn=document.getElementById("pdv-cobrar");if(btn)btn.disabled=!carrito().items.length;
+  carrito().items.forEach((item,i)=>{for(const id of [`cart-line-total-${i}`,`cart-detail-line-${i}`]){const row=document.getElementById(id);if(row)row.textContent=fmt(importeItemCarrito(item));}});
+  const detailTotal=document.getElementById("cart-detail-total");if(detailTotal)detailTotal.textContent=`Total: ${fmt(cobro.total??sub)}`;
 }
 function onPdvMetodo(){} // mantenido por compatibilidad — descuento ahora vive en el modal cobrar
 function onCliSelChange(){
@@ -1826,7 +1836,7 @@ function abrirCobrar(){
   document.getElementById("cobrar-obs").value="";
   const pend=document.getElementById("cobrar-pendiente-toggle");
   if(pend)pend.checked=false;
-  document.getElementById("cobrar-items").textContent = `${carrito().items.reduce((a,x)=>a+x.qty,0)} productos`;
+  document.getElementById("cobrar-items").textContent = `${carrito().items.length} productos · ${carrito().items.reduce((a,x)=>a+x.qty,0)} unidades`;
   document.getElementById("cobrar-cliente-label").textContent = cl ? cl.nombre : "Consumidor final";
   document.getElementById("cobrar-notif").innerHTML = "";
 
@@ -2380,9 +2390,9 @@ function renderAlertasCli(){
   const proximas=DB.clientes.filter(c=>estadoClienteActual(c)==="proximo");
   const favor=DB.clientes.filter(c=>c.saldoFavor>0);
   let html=`<div class="ph"><div><div class="pt">Alertas</div><div class="ps">Deudas vencidas · próximas a vencer · saldos a favor</div></div></div><div class="scroll">`;
-  if(vencidas.length){html+=`<div class="sect-title">Deudas vencidas</div>`;html+=vencidas.map(c=>`<div class="notif notif-rj" style="margin-bottom:7px;"><i class="ti ti-alert-circle" style="font-size:16px;flex-shrink:0;"></i><div style="flex:1;"><div style="font-weight:500;">${c.nombre}</div><div style="font-size:11px;margin-top:1px;">Deuda: ${fmt(c.deuda)} · Venció: ${c.vence}</div></div><button class="btn btn-sm" style="background:var(--rjbg);color:var(--rj);border:0.5px solid var(--rjbr);" onclick="abrirPagoCli(${c.id})">Cobrar</button></div>`).join("");}
-  if(proximas.length){html+=`<div class="sect-title" style="margin-top:14px;">Próximas a vencer</div>`;html+=proximas.map(c=>`<div class="notif notif-am" style="margin-bottom:7px;"><i class="ti ti-clock" style="font-size:16px;flex-shrink:0;"></i><div style="flex:1;"><div style="font-weight:500;">${c.nombre}</div><div style="font-size:11px;margin-top:1px;">Deuda: ${fmt(c.deuda)} · Vence: ${c.vence}</div></div><button class="btn btn-sm" style="background:var(--ambg);color:var(--am);border:0.5px solid var(--ambr);" onclick="abrirPagoCli(${c.id})">Cobrar</button></div>`).join("");}
-  if(favor.length){html+=`<div class="sect-title" style="margin-top:14px;">Saldo a favor disponible</div>`;html+=favor.map(c=>`<div class="notif notif-vd" style="margin-bottom:7px;"><i class="ti ti-star" style="font-size:16px;flex-shrink:0;"></i><div><div style="font-weight:500;">${c.nombre}</div><div style="font-size:11px;margin-top:1px;">Disponible: ${fmt(c.saldoFavor)}</div></div></div>`).join("");}
+  if(vencidas.length){html+=`<div class="sect-title">Deudas vencidas</div>`;html+=vencidas.map(c=>`<div data-search-record class="notif notif-rj" style="margin-bottom:7px;"><i class="ti ti-alert-circle" style="font-size:16px;flex-shrink:0;"></i><div style="flex:1;"><div style="font-weight:500;">${c.nombre}</div><div style="font-size:11px;margin-top:1px;">Deuda: ${fmt(c.deuda)} · Venció: ${c.vence}</div></div><button class="btn btn-sm" style="background:var(--rjbg);color:var(--rj);border:0.5px solid var(--rjbr);" onclick="abrirPagoCli(${c.id})">Cobrar</button></div>`).join("");}
+  if(proximas.length){html+=`<div class="sect-title" style="margin-top:14px;">Próximas a vencer</div>`;html+=proximas.map(c=>`<div data-search-record class="notif notif-am" style="margin-bottom:7px;"><i class="ti ti-clock" style="font-size:16px;flex-shrink:0;"></i><div style="flex:1;"><div style="font-weight:500;">${c.nombre}</div><div style="font-size:11px;margin-top:1px;">Deuda: ${fmt(c.deuda)} · Vence: ${c.vence}</div></div><button class="btn btn-sm" style="background:var(--ambg);color:var(--am);border:0.5px solid var(--ambr);" onclick="abrirPagoCli(${c.id})">Cobrar</button></div>`).join("");}
+  if(favor.length){html+=`<div class="sect-title" style="margin-top:14px;">Saldo a favor disponible</div>`;html+=favor.map(c=>`<div data-search-record class="notif notif-vd" style="margin-bottom:7px;"><i class="ti ti-star" style="font-size:16px;flex-shrink:0;"></i><div><div style="font-weight:500;">${c.nombre}</div><div style="font-size:11px;margin-top:1px;">Disponible: ${fmt(c.saldoFavor)}</div></div></div>`).join("");}
   if(!vencidas.length&&!proximas.length&&!favor.length)html+=`<div style="text-align:center;padding:40px;color:var(--gc);">Sin alertas activas</div>`;
   html+=`<div class="notif notif-pu" style="margin-top:20px;"><i class="ti ti-brand-whatsapp" style="font-size:16px;flex-shrink:0;"></i><div><div style="font-weight:500;">Integración WhatsApp <span class="bd bd-pu" style="font-size:10px;">Próximamente</span></div><div style="font-size:11px;margin-top:1px;">Recordatorios automáticos · avisos de vencimiento · promociones</div></div></div></div>`;
   document.getElementById("main-area").innerHTML=`<div style="display:flex;flex-direction:column;flex:1;">${html}</div>`;

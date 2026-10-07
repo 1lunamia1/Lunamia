@@ -6,6 +6,20 @@ Las correcciones están implementadas en esta versión. Los hallazgos de integri
 
 La aplicación sigue guardando un documento JSON compartido: el control de concurrencia detecta y bloquea conflictos, pero no combina automáticamente ediciones de dos operadores. Los datos históricos incompletos requieren revisión; las correcciones no recalculan silenciosamente saldos anteriores.
 
+### Corrección posterior: ventas y listados con muchos datos
+
+- Fallo reproducido con 40 productos: el carrito medía 4.320 px de alto, no desplazaba su contenido y dejaba fuera de la pantalla el último producto y Cobrar. Se corrigieron los límites de altura de la grilla y sus paneles, con una región desplazable para el carrito.
+- Filas compactas y panel más ancho en escritorio, contador de productos/unidades y botón Ver detalle. La vista ampliada muestra todos los ítems en una tabla editable, con total y Cobrar visibles; cambiar cantidad, descuento o eliminar conserva la posición y actualiza los importes. Al agregar una fila nueva el carrito muestra el final.
+- Pantallas bajas y móvil conservan acceso a los controles. Fichas largas y contenidos de modales tienen desplazamiento dentro de su espacio disponible.
+- Paginación de 25/50/100 registros en catálogo, productos, clientes, ventas, devoluciones, ingresos de stock, cuentas, cobros, fidelización, alertas, movimientos, gastos, transferencias, ingresos de tarjetas, proveedores, compras e historial de cierres. Primera/Anterior/Siguiente/Última permanecen junto a filtros o al listado. Listas de hasta 25 registros no muestran controles innecesarios.
+- Búsquedas y filtros vuelven a página 1; se ajusta la última página al reducir resultados. Los totales conservan su alcance completo. La paginación modifica visibilidad, no datos ni operaciones.
+- Hallazgo similar en ingreso de mercadería: buscar otro producto eliminaba del estado las cantidades/costos ya cargados fuera del filtro. Dos pruebas lo reprodujeron antes de la corrección. Ahora se mantiene el detalle completo y solo se filtra lo visible; costos cero se conservan y se aplican, y el total estimado cambia al editar costos.
+- Validación con datos aislados: 200 productos, 200 clientes, 120 ventas/movimientos/gastos, 160 compras de 80 proveedores, 80 cobros, devoluciones, transferencias y cierres. Se recorrieron 23 vistas en escritorio/móvil, las últimas páginas, búsquedas desde página avanzada, ausencia de coincidencias y cambio de tamaño. Sin desbordamiento horizontal del documento.
+- Rueda del mouse comprobada en el carrito: desde el primer al último ítem. A 1.366 × 500 px y 390 × 844 px, último producto accesible y Cobrar dentro de la pantalla. Modal ampliado con 40 filas, ficha con 100 movimientos e ingreso con 200 productos: últimos registros alcanzables, pies del modal visibles.
+- Venta confirmada desde la vista ampliada: 40 productos / 41 unidades, descuento de 10% en las dos últimas unidades, total $40.800. Caja de $75.000 a $115.800, stock total de 2.000 a 1.959 y carrito vacío. Prueba local, sin escrituras productivas.
+- Búsqueda en ingreso con 200 productos: cantidad 2 y costo $123,45 se mantienen al filtrar por el producto #200 y al limpiar la búsqueda; total estimado $246,90. Consola: 0 errores/advertencias.
+- Capturas locales ignoradas por git: `output/playwright/carrito-largo-antes.png`, `carrito-largo-corregido.png`, `carrito-largo-movil.png`, `carrito-detalle-ampliado.png`.
+
 ### Corrección posterior: búsqueda de clientes en Ventas
 
 - Se reprodujo que escribir filtraba las opciones ocultas del selector, pero seguía mostrando Consumidor final y ningún resultado visible. El filtro también podía impedir restaurar el cliente de otra venta pausada.
@@ -53,7 +67,7 @@ No se agregaron buscadores a resúmenes, cierre, análisis o guía estática, do
 
 ### Validación realizada
 
-- **84 pruebas automatizadas aprobadas**: 20 de acreditaciones, 39 de integridad, 17 de persistencia y 8 de búsqueda. Ejecutan las funciones reales de la aplicación con datos aislados; no conectan a producción.
+- **91 pruebas automatizadas aprobadas**: 20 de acreditaciones, 39 de integridad, 17 de persistencia, 8 de búsqueda y 7 de listados/ingresos. Ejecutan las funciones reales de la aplicación con datos aislados; no conectan a producción.
 - Migración ejecutada en **PostgreSQL 16 aislado**: conserva el documento existente, se puede repetir, elimina políticas amplias, restringe usuarios no autorizados, permite al usuario autorizado leer solo `main` y rechaza versiones incorrectas/JSON inválido. Script: `scripts/test-supabase.sql` (solo base `lunamia_qa`).
 - **23 vistas revisadas en navegador**, incluyendo Inicio, en escritorio y a 390 × 844 px. Sin desbordamiento horizontal del documento; tablas anchas conservan desplazamiento propio. Renderizado verificado con registros de venta, gasto, transferencia y devolución.
 - Pruebas de buscador sin acentos, sin coincidencias, limpiar, fechas, conservación del cursor; menú móvil, foco del modal, Tab, Escape, cabecera y pie visibles. Un modal con 20 métodos de pago mantiene el pie dentro de la pantalla; cambiar el método conserva el foco. Consola: **0 errores y 0 advertencias**.
@@ -78,7 +92,7 @@ Estas comprobaciones no prueban los permisos efectivos de todos los usuarios aut
 | Prioridad | Mejora | Motivo |
 | --- | --- | --- |
 | Alta | Conciliación inicial de datos históricos | Revisar tarjetas anteriores, saldos y fechas incompletas; el código respeta el comportamiento histórico y no puede deducir comisiones o costos que nunca se guardaron. |
-| Media | Paginación y filtros más específicos | Los buscadores actuales filtran registros cargados. Para historiales grandes, agregar páginas y filtros por cliente, proveedor, caja/medio y estado. |
+| Media | Paginación desde servidor y filtros más específicos | La paginación de interfaz ya está implementada; todavía se cargan el documento y sus registros completos. Para volúmenes mayores, separar entidades y pedir páginas al servidor; agregar filtros dedicados por cliente, proveedor, caja/medio y estado. |
 | Media | Búsqueda global y acceso directo por número/código | Encontrar venta, cliente o producto sin entrar primero en cada módulo. Ctrl/Cmd+K actualmente enfoca la búsqueda de la vista. |
 | Media | Carritos persistentes y recuperación tras recargar | Las ventas pausadas son carritos en memoria y se pierden al recargar. Diferenciar su recuperación de los borradores de operaciones ya confirmadas. |
 | Media | Auditoría por operador y permisos por rol | Registrar quién anuló, editó o acreditó; delimitar tareas de caja/administración. Hoy la allowlist controla acceso a todo el documento. |
