@@ -5,12 +5,35 @@
     <span class="dash-fecha" id="dash-fecha"></span>
   </div>
 
-  <div class="daily-message">
-    <div>
-      <span class="daily-eyebrow">Mensaje del día</span>
-      <p id="daily-message-text">Buen día Andrea, hoy es un gran día para crecer.</p>
+  <!-- ACCIONES RÁPIDAS -->
+  <div class="dash-section">
+    <h3 class="dash-section-title">Acciones rápidas</h3>
+    <div class="dash-quick-actions">
+      <button class="quick-action-btn" onclick="abrirVenta()">
+        <i class="ti ti-shopping-cart"></i>
+        <span>Nueva venta</span>
+      </button>
+      <button class="quick-action-btn" onclick="abrirIngresoMerch(null)">
+        <i class="ti ti-package-import"></i>
+        <span>Ingreso de stock</span>
+      </button>
+      <button class="quick-action-btn" onclick="abrirNuevoCliente()">
+        <i class="ti ti-user-plus"></i>
+        <span>Nuevo cliente</span>
+      </button>
+      <button class="quick-action-btn" onclick="abrirNuevoProd()">
+        <i class="ti ti-shirt"></i>
+        <span>Nuevo producto</span>
+      </button>
+      <button class="quick-action-btn" onclick="abrirGasto()">
+        <i class="ti ti-receipt"></i>
+        <span>Registrar gasto</span>
+      </button>
+      <button class="quick-action-btn" onclick="abrirCierreModal()">
+        <i class="ti ti-lock"></i>
+        <span>Cierre del día</span>
+      </button>
     </div>
-    <i class="ti ti-sparkles"></i>
   </div>
 
   <!-- CARDS RESUMEN (KPIs) -->
@@ -60,78 +83,6 @@
     </div>
   </div>
 
-  <!-- ESTADO DE DATOS -->
-  <div class="dash-section dash-data-status" id="dash-data-status">
-    <div class="dash-data-head">
-      <div>
-        <h3 class="dash-section-title" style="margin:0;">Estado de datos</h3>
-        <p id="dash-data-message">Verificando base activa...</p>
-      </div>
-      <span class="data-badge" id="dash-data-badge">Revisando</span>
-    </div>
-    <div class="dash-data-grid">
-      <div>
-        <span>Fuente activa</span>
-        <strong id="dash-data-source">—</strong>
-      </div>
-      <div>
-        <span>Clientes</span>
-        <strong id="dash-data-clientes">—</strong>
-      </div>
-      <div>
-        <span>Productos</span>
-        <strong id="dash-data-productos">—</strong>
-      </div>
-      <div>
-        <span>Ventas</span>
-        <strong id="dash-data-ventas">—</strong>
-      </div>
-      <div>
-        <span>Movimientos</span>
-        <strong id="dash-data-movimientos">—</strong>
-      </div>
-      <div>
-        <span>Supabase</span>
-        <strong id="dash-data-sync">—</strong>
-      </div>
-    </div>
-    <div class="dash-data-actions">
-      <button class="btn btn-ng btn-sm" id="dash-data-import-btn" onclick="importarExcelInicial()" style="display:none;"><i class="ti ti-database-import"></i>Importar Excel a Supabase</button>
-      <span id="dash-data-caja-note"></span>
-    </div>
-  </div>
-
-  <!-- ACCIONES RÁPIDAS -->
-  <div class="dash-section">
-    <h3 class="dash-section-title">Acciones rápidas</h3>
-    <div class="dash-quick-actions">
-      <button class="quick-action-btn" onclick="abrirVenta()">
-        <i class="ti ti-shopping-cart"></i>
-        <span>Nueva venta</span>
-      </button>
-      <button class="quick-action-btn" onclick="abrirIngresoMerch(null)">
-        <i class="ti ti-package-import"></i>
-        <span>Ingreso merch.</span>
-      </button>
-      <button class="quick-action-btn" onclick="abrirNuevoCliente()">
-        <i class="ti ti-user-plus"></i>
-        <span>Nuevo cliente</span>
-      </button>
-      <button class="quick-action-btn" onclick="abrirNuevoProd()">
-        <i class="ti ti-shirt"></i>
-        <span>Nuevo producto</span>
-      </button>
-      <button class="quick-action-btn" onclick="abrirGasto()">
-        <i class="ti ti-receipt"></i>
-        <span>Registrar gasto</span>
-      </button>
-      <button class="quick-action-btn" onclick="abrirCierreModal()">
-        <i class="ti ti-lock"></i>
-        <span>Cierre del día</span>
-      </button>
-    </div>
-  </div>
-
   <!-- CLIENTES CON DEUDA -->
   <div class="dash-section">
     <h3 class="dash-section-title">Clientes con cuentas corrientes</h3>
@@ -176,4 +127,53 @@
       </div>
     </div>
   </div>
+  <!-- ESTADO DE DATOS -->
+  <div class="dash-section dash-data-status" id="dash-data-status">
+    <div class="dash-data-head">
+      <div>
+        <h3 class="dash-section-title" style="margin:0;">Estado de datos</h3>
+        <p id="dash-data-message">Verificando base activa...</p>
+      </div>
+      <span class="data-badge" id="dash-data-badge">Revisando</span>
+    </div>
+    <div class="dash-data-grid">
+      <div>
+        <span>Fuente activa</span>
+        <strong id="dash-data-source">—</strong>
+      </div>
+      <div>
+        <span>Clientes</span>
+        <strong id="dash-data-clientes">—</strong>
+      </div>
+      <div>
+        <span>Productos</span>
+        <strong id="dash-data-productos">—</strong>
+      </div>
+      <div>
+        <span>Ventas</span>
+        <strong id="dash-data-ventas">—</strong>
+      </div>
+      <div>
+        <span>Movimientos</span>
+        <strong id="dash-data-movimientos">—</strong>
+      </div>
+      <div>
+        <span>Supabase</span>
+        <strong id="dash-data-sync">—</strong>
+      </div>
+    </div>
+    <div class="dash-data-actions">
+      <button class="btn btn-ng btn-sm" id="dash-data-import-btn" onclick="importarExcelInicial()" style="display:none;"><i class="ti ti-database-import"></i>Importar Excel a Supabase</button>
+      <span id="dash-data-caja-note"></span>
+    </div>
+  </div>
+
+  <div class="daily-message">
+    <div>
+      <span class="daily-eyebrow">Mensaje del día</span>
+      <p id="daily-message-text">Buen día Andrea, hoy es un gran día para crecer.</p>
+    </div>
+    <i class="ti ti-sparkles"></i>
+  </div>
+
 </div>

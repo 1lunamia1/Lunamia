@@ -7,20 +7,25 @@
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" />
 <link rel="stylesheet" href="styles.css" />
-<link rel="stylesheet" href="dashboard.css" />
+<link id="dashboard-css" rel="stylesheet" href="dashboard.css" />
+<link rel="stylesheet" href="experiencia.css" />
 </head>
 <body>
 <div class="app">
 <div class="topbar">
+  <button id="nav-toggle" class="nav-toggle" type="button" onclick="toggleNav()" aria-label="Abrir menú" aria-controls="leftnav" aria-expanded="false"><i class="ti ti-menu-2" aria-hidden="true"></i></button>
   <div class="brand">
     <img src="assets/logo.svg" alt="" class="brand-logo" />Luna Mia
     <span class="brand-sub">· indumentaria</span>
   </div>
   <div class="topbar-actions">
     <span class="sync-status" id="sync-status">Local</span>
+    <details class="topbar-backup"><summary class="topbar-btn">Respaldo</summary><div class="backup-menu"><button class="btn btn-out btn-sm" onclick="exportarRespaldo()">Descargar respaldo</button><button class="btn btn-out btn-sm" onclick="document.getElementById('backup-input').click()">Restaurar respaldo</button><input id="backup-input" type="file" accept="application/json,.json" hidden onchange="importarRespaldo(event)"/></div></details>
     <button class="topbar-btn" id="logout-btn" onclick="logoutSupabase()" style="display:none;">Salir</button>
   </div>
 </div>
+<div id="sync-alert" class="sync-alert" hidden></div>
+<button type="button" class="nav-backdrop" onclick="toggleNav(false)" aria-label="Cerrar menú"></button>
 
 <div class="body-wrap">
 <div class="leftnav" id="leftnav"></div>
@@ -70,6 +75,7 @@
     <!-- ── PAGOS DIVIDIDOS ── -->
     <div class="sect-title">Métodos de pago</div>
     <div id="cobrar-pagos-list" style="display:flex;flex-direction:column;gap:7px;margin-bottom:10px;"></div>
+    <div id="cobrar-aviso-tarjeta" class="notif notif-az" style="display:none;margin-bottom:10px;font-size:12px;">Los pagos con tarjeta quedan con ingreso de dinero pendiente. Cuando recibas el dinero, registrá la acreditación y la comisión desde la venta; recién entonces se sumará el neto a caja.</div>
     <button class="btn-ghost" style="width:100%;justify-content:center;margin-bottom:12px;" onclick="agregarMetodoPago()">
       <i class="ti ti-plus"></i> Agregar método de pago
     </button>
@@ -104,8 +110,8 @@
     <label style="display:flex;align-items:flex-start;gap:9px;background:var(--azbg);border:0.5px solid var(--azbr);border-radius:8px;padding:10px 13px;margin-top:10px;cursor:pointer;">
       <input type="checkbox" id="cobrar-pendiente-toggle" onchange="recalcCobrar()" style="width:15px;height:15px;margin-top:1px;accent-color:var(--az);"/>
       <span>
-        <span style="display:block;font-size:12px;color:var(--az);font-weight:600;">Dejar venta pendiente</span>
-        <span style="display:block;font-size:10px;color:var(--az);opacity:.8;margin-top:2px;">Reserva stock ahora y no mueve caja hasta cobrarla.</span>
+        <span style="display:block;font-size:12px;color:var(--az);font-weight:600;">Dejar venta pendiente de cobro</span>
+        <span style="display:block;font-size:10px;color:var(--az);opacity:.8;margin-top:2px;">El cliente todavía no pagó. Reserva stock; no registra pagos ni mueve caja.</span>
       </span>
     </label>
 
@@ -126,12 +132,14 @@
     <div class="notif notif-az"><i class="ti ti-info-circle"></i>Genera saldo a favor · no devolución de dinero</div>
     <div class="fg2">
       <div class="fg"><label>Cliente</label><select id="dev-cliente"><option value="">Consumidor final</option></select></div>
-      <div class="fg"><label>Venta original #</label><input type="text" id="dev-venta" placeholder="Nro. de venta"/></div>
+      <div class="fg"><label for="dev-venta">Venta original #</label><input type="number" min="1" step="1" id="dev-venta" list="dev-ventas" placeholder="Nro. de venta" onchange="onDevVentaChange()"/><datalist id="dev-ventas"></datalist></div>
     </div>
-    <div class="fg"><label>Producto devuelto</label><select id="dev-prod"></select></div>
+    <div id="dev-info" class="notif notif-az" style="font-size:12px;"></div>
+    <div class="fg"><label for="dev-prod">Producto devuelto</label><select id="dev-prod" onchange="recalcDevolucion()"></select></div>
+    <div class="fg"><label for="dev-cantidad">Cantidad a devolver</label><input type="number" min="1" step="1" value="1" id="dev-cantidad" oninput="recalcDevolucion()"/></div>
     <div class="fg2">
       <div class="fg"><label>Motivo</label><select id="dev-motivo"><option>Talla incorrecta</option><option>Defecto de fábrica</option><option>No gustó</option><option>Otro</option></select></div>
-      <div class="fg"><label>Saldo a favor ($)</label><input type="number" id="dev-monto" placeholder="$"/></div>
+      <div class="fg"><label for="dev-monto">Saldo a favor ($)</label><input type="number" min="0.01" step="0.01" id="dev-monto" placeholder="$"/></div>
     </div>
     <div style="background:var(--crd);border-radius:8px;padding:10px 12px;font-size:12px;">
       <div style="font-weight:500;margin-bottom:5px;">Condiciones de devolución</div>
@@ -366,13 +374,14 @@
     </div>
     <div class="fg2">
       <div class="fg"><label>Monto del pago</label><input type="number" id="pago-cli-monto" placeholder="$0" oninput="recalcPagoCli()"/></div>
-      <div class="fg"><label>Método</label><select id="pago-cli-metodo"><option>Efectivo</option><option>Transferencia</option><option>Débito</option></select></div>
+      <div class="fg"><label>Método</label><select id="pago-cli-metodo" onchange="recalcPagoCli()"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div>
     </div>
+    <div id="pago-cli-aviso" class="notif notif-az" hidden style="font-size:12px;">La deuda se cancela al confirmar el cobro. El dinero de tarjeta queda pendiente hasta registrar su acreditación desde Cobros registrados o Caja.</div>
     <div style="background:var(--ng);color:var(--cr);border-radius:9px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;">
       <div><div style="font-size:10px;color:var(--gc);">Deuda restante</div><div style="font-size:18px;font-weight:500;" id="pago-cli-resto">$—</div></div>
       <div style="font-size:12px;color:var(--gc);" id="pago-cli-tipo">—</div>
     </div>
-    <div class="fg" style="margin-top:12px;"><label>Observaciones</label><input type="text" placeholder="Nro. de recibo..."/></div>
+    <div class="fg" style="margin-top:12px;"><label>Observaciones</label><input type="text" id="pago-cli-obs" placeholder="Nro. de recibo..."/></div>
   </div>
   <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-pago-cliente')">Cancelar</button><button class="btn btn-ng" onclick="procesarPagoCli()"><i class="ti ti-check"></i>Confirmar pago</button></div>
 </div>
@@ -407,9 +416,12 @@
       <div class="fg"><label>Origen</label><select id="tr-origen" onchange="recalcTransf()"><option value="principal">Caja principal</option><option value="reinversion">Caja reinversión</option></select></div>
       <div class="fg"><label>Destino</label><select id="tr-destino" onchange="recalcTransf()"><option value="reinversion">Caja reinversión</option><option value="principal">Caja principal</option></select></div>
     </div>
-    <div class="fg"><label>Origen del dinero</label><select id="tr-medio" onchange="recalcTransf()"><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option></select></div>
     <div class="fg2">
-      <div class="fg"><label>Monto</label><input type="number" id="tr-monto" placeholder="$0" oninput="recalcTransf()"/></div>
+      <div class="fg"><label for="tr-medio">Origen del dinero</label><select id="tr-medio" onchange="recalcTransf()"><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="debito">Débito</option><option value="credito">Crédito</option></select></div>
+      <div class="fg"><label for="tr-medio-destino">Destino del dinero</label><select id="tr-medio-destino" onchange="recalcTransf()"><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="debito">Débito</option><option value="credito">Crédito</option></select></div>
+    </div>
+    <div class="fg2">
+      <div class="fg"><label for="tr-monto">Monto</label><input type="number" id="tr-monto" min="0.01" step="0.01" placeholder="$0" oninput="recalcTransf()"/></div>
       <div class="fg"><label>Fecha</label><input type="date" id="tr-fecha"/></div>
     </div>
     <div id="tr-info" style="display:none;background:var(--crd);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--gt);margin-bottom:12px;"></div>
@@ -496,8 +508,13 @@ function syncTallesStrip() {
 <script src="data/local-demo.js"></script>
 <script src="data/import-summary.js"></script>
 <script src="app.js"></script>
+<script src="integridad.js"></script>
+<script src="persistencia.js"></script>
+<script src="acreditaciones.js"></script>
+<script src="pagos-clientes.js"></script>
 <script src="descuentos-conjuntos.js"></script>
 <script src="editar-venta.js"></script>
 <script src="dashboard.js"></script>
+<script src="experiencia.js"></script>
 </body>
 </html>

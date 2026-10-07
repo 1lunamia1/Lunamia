@@ -80,7 +80,9 @@ function abrirFormularioEditarVenta(venta) {
   const info = document.getElementById("ev-linea-info");
   if (info) {
     info.style.display = "block";
-    info.innerHTML = `<i class="ti ti-info-circle"></i> Podés modificar productos, variantes, cantidades y precios. Al guardar se recalculan stock, caja y cuenta corriente.`;
+    info.innerHTML = normalizarPagosVenta(venta).some(p=>esPagoTarjeta(p)&&p.acreditacion==="acreditada")
+      ? `<i class="ti ti-info-circle"></i> Esta venta tiene dinero de tarjeta ingresado. Conservá el total y el método de pago; podés editar productos, cliente, fecha y observaciones.`
+      : `<i class="ti ti-info-circle"></i> Podés modificar productos, variantes, cantidades y precios. Al guardar se recalculan stock, caja y cuenta corriente. Los cobros con tarjeta quedan pendientes hasta registrar su ingreso.`;
   }
 
   mostrarInfoAuditoria(venta);
@@ -145,7 +147,7 @@ function crearModalEditarVenta() {
           <label style="display:flex;align-items:flex-start;gap:9px;background:var(--azbg);border:0.5px solid var(--azbr);border-radius:8px;padding:10px 13px;margin-bottom:12px;cursor:pointer;">
             <input type="checkbox" id="ev-pendiente" onchange="onEditPendienteChange()" style="width:15px;height:15px;margin-top:1px;accent-color:var(--az);"/>
             <span>
-              <span style="display:block;font-size:12px;color:var(--az);font-weight:600;">Venta pendiente</span>
+              <span style="display:block;font-size:12px;color:var(--az);font-weight:600;">Venta pendiente de cobro</span>
               <span style="display:block;font-size:10px;color:var(--az);opacity:.8;margin-top:2px;">Reserva stock, sin caja ni cuenta corriente hasta cobrarla.</span>
             </span>
           </label>
@@ -246,9 +248,10 @@ function syncItemDesdeDOM(i) {
   const producto = DB.productos.find(p => p.id === prodId);
   const cod = document.getElementById(`ev-item-var-${i}`)?.value || "";
   const variante = producto?.variantes.find(v => v.cod === cod);
-  const cantidad = Math.max(1, parseFloat(document.getElementById(`ev-item-cant-${i}`)?.value)||1);
-  const precio = Math.max(0, parseFloat(document.getElementById(`ev-item-precio-${i}`)?.value)||0);
-  const descuentoItemPct = Math.max(0, Math.min(100, parseFloat(document.getElementById(`ev-item-desc-${i}`)?.value)||0));
+  if(producto?.id!==item.pid)item.costo_unitario=Number(producto?.costo)||0;
+  const cantidad = Number(document.getElementById(`ev-item-cant-${i}`)?.value);
+  const precio = Number(document.getElementById(`ev-item-precio-${i}`)?.value);
+  const descuentoItemPct = Number(document.getElementById(`ev-item-desc-${i}`)?.value);
   Object.assign(item, {
     pid: producto?.id || null,
     cod: variante?.cod || cod,
@@ -339,6 +342,9 @@ function eliminarItemEditVenta(i) {
 
 function itemsEdicionValidos() {
   syncTodosItemsDesdeDOM();
+  if(editVentaItemsTmp.some(it=>!cantidadValida(it.cantidad)||!importeValido(it.precio,true)||!Number.isFinite(it.descuentoItemPct)||it.descuentoItemPct<0||it.descuentoItemPct>100)){
+    alert("Revisá cantidades enteras, precios y descuentos entre 0 y 100%.");return null;
+  }
   const items = editVentaItemsTmp.filter(it => Number(it.cantidad)>0);
   if (!items.length) { alert("La venta debe tener al menos un producto."); return null; }
   for (const item of items) {
@@ -396,7 +402,7 @@ function calcularCobroEdicion(items = null) {
     const cantidad = Number(item.cantidad ?? original.cantidad)||1;
     const precio = Number(item.precio)||0;
     const descuentoItemPct = Math.max(0, Math.min(100, Number(original.descuentoItemPct)||0));
-    const descuentoItemMonto = Math.round(precio*cantidad*descuentoItemPct/100);
+    const descuentoItemMonto = redondearImporte(precio*cantidad*descuentoItemPct/100);
     return {
       pid: item.pid || item.id,
       cod: item.cod || original.cod,
@@ -405,6 +411,7 @@ function calcularCobroEdicion(items = null) {
       talle: item.talle || original.talle || "",
       precio,
       precio_unitario: precio,
+      costo_unitario:Number(original.costo_unitario??DB.productos.find(p=>p.id===item.pid)?.costo)||0,
       cantidad,
       descuentoItemPct,
       descuentoItemMonto,
@@ -416,10 +423,10 @@ function calcularCobroEdicion(items = null) {
   });
   const subtotal = detalles.reduce((a,x)=>a+x.precio*x.cantidad,0);
   const descuentoItems = detalles.reduce((a,x)=>a+(Number(x.descuentoItemMonto)||0),0);
-  const descuentoConjunto = Math.round(Number(resultado.descuentoTotal)||0);
+  const descuentoConjunto = redondearImporte(Number(resultado.descuentoTotal)||0);
   const base = Math.max(0, subtotal-descuentoItems-descuentoConjunto);
-  const descuentoGeneralMonto = Math.round(base*(descGeneral/100));
-  const total = Math.round(base-descuentoGeneralMonto);
+  const descuentoGeneralMonto = redondearImporte(base*(descGeneral/100));
+  const total = redondearImporte(base-descuentoGeneralMonto);
   return {subtotal,descuentoItems,descuentoConjunto,descuentoGeneral:descGeneral,descuentoGeneralMonto,total,detalles,detallesConjuntos:resultado.detalles||[],descuentoConjuntoAplicado:descuentoConjunto>0};
 }
 
@@ -500,27 +507,47 @@ function onEditPendienteChange() {
 }
 
 function pagosEditados(totalFinal, metodo, clienteId) {
-  if (document.getElementById("ev-pendiente")?.checked) return [];
+  const pendiente=Boolean(document.getElementById("ev-pendiente")?.checked);
+  const originales=normalizarPagosVenta(ventaOriginal,ventaOriginal.total);
+  const mismosPagos=!pendiente&&metodo===metodoParaEditor(ventaOriginal)&&Math.abs(totalFinal-ventaOriginal.total)<0.005;
+  if(!pendiente&&!clienteId&&originales.some(p=>p.tipo==="cuenta")&&metodo==="mixto"){alert("Seleccioná un cliente para la parte en cuenta corriente.");return null;}
+  if(mismosPagos)return cloneData(originales);
+  if(originales.some(p=>esPagoTarjeta(p)&&p.acreditacion==="acreditada")){
+    alert("Esta venta tiene ingresos de tarjeta registrados. Conservá el total y el método de pago para mantener la acreditación; podés editar los demás datos.");
+    return null;
+  }
+  if (pendiente) return [];
   if (metodo === "mixto") {
-    const originales = normalizarPagosVenta(ventaOriginal, ventaOriginal.total);
     const base = ventaOriginal.total || totalFinal || 1;
-    return originales.map(p => ({ tipo:p.tipo, monto:Math.round((p.monto || 0) * totalFinal / base) })).filter(p => p.monto > 0);
+    let restante=totalFinal;
+    return prepararPagosConAcreditacion(originales.map((p,i)=>{
+      const monto=i===originales.length-1?restante:Math.min(restante,Math.round((p.monto||0)*totalFinal/base*100)/100);
+      restante=Math.round((restante-monto)*100)/100;
+      return {tipo:p.tipo,monto};
+    }).filter(p=>p.monto>0));
   }
   const tipo = pagoTipoNormalizado(metodo);
   if (tipo === "cuenta" && !clienteId) {
     alert("Para cuenta corriente seleccioná un cliente.");
     return null;
   }
-  return [{ tipo, monto:totalFinal }];
+  return prepararPagosConAcreditacion([{ tipo, monto:totalFinal }]);
 }
 
 function guardarCambiosVenta() {
+  if(!puedeModificarDB())return false;
   if (!editingVentaId || !ventaOriginal) { alert("Error: No hay venta en edición"); return; }
   const ventaIdx = DB.ventas.findIndex(v => v.id === editingVentaId);
   if (ventaIdx < 0) { alert("Venta no encontrada"); return; }
+  if(JSON.stringify(DB.ventas[ventaIdx])!==JSON.stringify(ventaOriginal)){
+    alert("La venta cambió mientras estaba abierta. Volvé a abrirla antes de guardar para conservar sus ingresos registrados.");
+    return;
+  }
 
   const items = itemsEdicionValidos();
   if (!items) return;
+  const desc=Number(document.getElementById("ev-desc-general").value);
+  if(!Number.isFinite(desc)||desc<0||desc>100){alert("El descuento debe estar entre 0 y 100%.");return false;}
   const cobro = calcularCobroEdicion(items);
   const clienteId = parseInt(document.getElementById("ev-cliente-id").value, 10) || null;
   const clienteNombre = cleanPlainText(document.getElementById("ev-cliente-nombre").value) || "Consumidor final";
@@ -565,11 +592,18 @@ function guardarCambiosVenta() {
       { fecha:new Date().toISOString(), accion:"editada", antes:ventaOriginal, total_anterior:ventaOriginal.total, total_nuevo:cobro.total }
     ]
   };
+  if(ventaTieneDevoluciones(DB.ventas[ventaIdx])&&(firmaItems(normalizarItemsVenta(ventaActualizada))!==firmaItems(normalizarItemsVenta(ventaOriginal))||ventaActualizada.total!==ventaOriginal.total||clienteId!==ventaOriginal.cliente_id)){
+    alert("Primero anulá las devoluciones asociadas antes de cambiar productos, total o cliente.");return false;
+  }
+  const mismosIngresos=JSON.stringify(normalizarPagosVenta(ventaOriginal).map(ingresoCajaPagoVenta))===JSON.stringify(normalizarPagosVenta(ventaActualizada).map(ingresoCajaPagoVenta));
+  if(!mismosIngresos&&!validarReversionCaja(movimientosReversionVenta(DB.ventas[ventaIdx])))return false;
+  const cuentaOriginal=normalizarPagosVenta(ventaOriginal).filter(p=>p.tipo==="cuenta").reduce((a,p)=>a+p.monto-(p.favor_aplicado||0),0);
+  if(!validarCuentaVenta(ventaActualizada,{id:ventaOriginal.cliente_id,cargo:cuentaOriginal}))return false;
 
   const ventaAnterior = cloneData(DB.ventas[ventaIdx]);
-  revertirEfectosVenta(ventaAnterior);
+  revertirEfectosVenta(ventaAnterior,{sinCaja:mismosIngresos});
   DB.ventas[ventaIdx] = ventaActualizada;
-  aplicarEfectosVenta(ventaActualizada);
+  aplicarEfectosVenta(ventaActualizada,{sinCaja:mismosIngresos});
   persistDBSoon();
 
   alert(`Venta #${editingVentaId} actualizada correctamente.`);
@@ -588,6 +622,7 @@ function confirmarEliminarVenta() {
 }
 
 function eliminarVentaConfirmada() {
+  if(!puedeModificarDB())return false;
   if (!eliminarVentaPorId(editingVentaId)) { alert("Venta no encontrada"); return; }
   alert(`Venta #${editingVentaId} marcada como eliminada y revertida.`);
   closeOv("ov-editar-venta");

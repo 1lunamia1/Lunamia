@@ -3,10 +3,13 @@
 ════════════════════════════════════════ */
 
 // Cargar el dashboard al iniciar
+let dashboardLoadId=0;
 function cargarDashboard() {
-  fetch('dashboard.html')
-    .then(r => r.text())
+  const id=++dashboardLoadId;
+  return fetch('dashboard.html',{cache:'no-cache'})
+    .then(r => {if(!r.ok)throw new Error("No se pudo cargar Inicio.");return r.text();})
     .then(html => {
+      if(id!==dashboardLoadId||currentMod!=="dashboard")return;
       const mainArea = document.getElementById('main-area');
       mainArea.innerHTML = html;
       
@@ -20,6 +23,10 @@ function cargarDashboard() {
       }
       
       actualizarDashboard();
+      if(typeof ajustarVista==="function")ajustarVista();
+    }).catch(error=>{
+      if(id!==dashboardLoadId||currentMod!=="dashboard")return;
+      document.getElementById("main-area").innerHTML=`<div class="ph"><div class="pt">Inicio</div></div><div class="empty-state">${escapeHTML(error.message)} <button class="btn btn-out" onclick="cargarDashboard()">Reintentar</button></div>`;
     });
 }
 
@@ -45,6 +52,7 @@ async function actualizarDashboard() {
   
   // Obtener datos de la base cargada por la app principal
   const datos = await obtenerDatosResumen();
+  if(currentMod!=="dashboard"||!document.getElementById("kpi-ventas-hoy"))return;
   
   // Actualizar KPIs
   if (document.getElementById('kpi-ventas-hoy')) {
@@ -85,7 +93,7 @@ async function obtenerDatosResumen() {
   const fechaHoy = typeof todayShort === "function"
     ? todayShort()
     : new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}).replace("/", "/");
-  const ventasHoy = db.ventas.filter(v => v.fecha === fechaHoy && !v.eliminada && v.estado !== "pendiente");
+  const ventasHoy = db.ventas.filter(v => isTodayRecord(v) && !v.eliminada && v.estado !== "pendiente");
   return {
     ventasHoy: ventasHoy.reduce((a,v)=>a+(v.total||0),0),
     cantVentas: ventasHoy.length,
@@ -128,7 +136,7 @@ function actualizarEstadoDatos(){
   const summary = window.LUNAMIA_IMPORT_SUMMARY;
   const matchExcel = datosCoincidenConExcel(db);
   const supabaseOn = typeof SUPABASE_ON !== "undefined" && SUPABASE_ON;
-  const synced = typeof remoteReady !== "undefined" && remoteReady;
+  const synced = typeof remoteReady !== "undefined" && remoteReady&&!syncBlocked&&dirtyGeneration===savedGeneration;
   const source = db.meta?.fuente || "Base existente";
   const expectedSource = initial?.meta?.fuente || summary?.fuente || "Excel";
   const demoLocal = !supabaseOn && /demo local/i.test(`${source} ${expectedSource}`);
@@ -144,7 +152,11 @@ function actualizarEstadoDatos(){
   document.getElementById("dash-data-movimientos").textContent = conteoDB(db,"movimientos");
   document.getElementById("dash-data-sync").textContent = supabaseOn ? (synced ? "Conectado" : "Pendiente") : "Local";
 
-  if(demoLocal){
+  if(supabaseOn){
+    badge.textContent=synced?"Datos guardados":"Cambios pendientes";
+    badge.className=`data-badge ${synced?"ok":"warn"}`;
+    msg.textContent=syncBlocked?"Revisá el aviso de sincronización antes de continuar operando.":synced?"Los datos activos están guardados en la base compartida.":"Hay cambios que todavía no se confirmaron en la base compartida.";
+  }else if(demoLocal){
     badge.textContent = "Demo local";
     badge.className = "data-badge ok";
     msg.textContent = "La app está usando datos ficticios para pruebas locales. Supabase está desactivado y no se leen ni escriben datos reales.";
@@ -187,6 +199,7 @@ function actualizarAvisoImportacion(){
 // Cargar últimas ventas
 function cargarUltimasVentas() {
   const listElement = document.getElementById('dash-ventas-list');
+  if(!listElement)return;
   const db = typeof DB !== "undefined" ? DB : null;
   const ventas = db ? db.ventas.filter(v => !v.eliminada).slice(0,5) : [];
 
@@ -200,7 +213,7 @@ function cargarUltimasVentas() {
     return;
   }
   
-  let html = '';
+  let html = totalTarjetasPendientes()>0?`<div class="notif notif-az" style="margin-bottom:10px;font-size:12px;display:flex;justify-content:space-between;gap:8px;"><span>Ingreso de tarjetas pendiente: ${formatearMoney(totalTarjetasPendientes())}</span><button class="btn btn-out btn-sm" onclick="verVentasConIngresoPendiente()">Ver pendientes</button></div>`:'';
   ventas.forEach(venta => {
     const descuentoMsg = venta.descuentoConjuntoAplicado ? '<span style="font-size:10px;color:var(--az);margin-left:8px;">Se aplicó desc por conj</span>' : '';
     html += `
@@ -208,6 +221,7 @@ function cargarUltimasVentas() {
         <div class="venta-item-info" style="flex:1;">
           <div class="venta-item-cliente">${venta.cliente}</div>
           <div class="venta-item-meta">Venta #${venta.id} · ${venta.hora}${descuentoMsg}</div>
+          <div style="margin-top:5px;">${estadoIngresoVentaHTML(venta)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="venta-item-monto">${formatearMoney(venta.total)}</div>
@@ -243,26 +257,15 @@ function eliminarVenta(idVenta) {
 }
 
 // Eliminar devolución desde módulo de devoluciones
-function eliminarDevolucion(idDevolucion) {
-  if (!confirm('¿Confirmas que deseas eliminar esta devolución?')) return;
-  
-  const db = typeof DB !== "undefined" ? DB : null;
-  if (!db) return;
-  
-  const index = db.devoluciones.findIndex(d => d.id === idDevolucion);
-  if (index > -1) {
-    db.devoluciones.splice(index, 1);
-    persistDBSoon();
-    renderDevoluciones();
-  }
-}
+function eliminarDevolucion(idDevolucion){return anularDevolucion(idDevolucion);}
 
 // Cargar clientes con deuda
 function cargarDeudores() {
   const listElement = document.getElementById('dash-deudores-list');
+  if(!listElement)return;
   const db = typeof DB !== "undefined" ? DB : null;
   const deudores = db
-    ? db.clientes.filter(c=>(c.deuda||0)>0 || c.estado==="proximo").sort((a,b)=>(b.deuda||0)-(a.deuda||0)).slice(0,8)
+    ? db.clientes.filter(c=>(c.deuda||0)>0 || estadoClienteActual(c)==="proximo").sort((a,b)=>(b.deuda||0)-(a.deuda||0)).slice(0,8)
     : [];
 
   if (deudores.length === 0) {
@@ -281,7 +284,7 @@ function cargarDeudores() {
       <div class="deudor-item">
         <div class="deudor-info">
           <div class="deudor-nombre">${deudor.nombre}</div>
-          <div class="deudor-meta">${deudor.estado === "vencida" ? "Vencida" : deudor.estado === "proximo" ? "Por vencer" : "Saldo pendiente"}</div>
+          <div class="deudor-meta">${estadoClienteActual(deudor) === "vencida" ? "Vencida" : estadoClienteActual(deudor) === "proximo" ? "Por vencer" : "Saldo pendiente"}</div>
         </div>
         <div style="display: flex; align-items: center;">
           <div class="deudor-monto">${formatearMoney(deudor.deuda)}</div>

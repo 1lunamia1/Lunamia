@@ -1,0 +1,52 @@
+name: Verificaciones
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Sintaxis JavaScript
+        run: |
+          while IFS= read -r -d '' file; do node --check "$file"; done < <(git ls-files -z '*.js' '*.cjs')
+      - name: Integridad, acreditaciones y persistencia
+        run: node --test scripts/test-acreditaciones.cjs scripts/test-integridad.cjs scripts/test-persistencia.cjs
+  supabase:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: lunamia-qa-local-only
+          POSTGRES_DB: lunamia_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Instalar cliente PostgreSQL
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Migración, allowlist, RLS y versiones en base aislada
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: lunamia-qa-local-only
+          PGDATABASE: lunamia_qa
+        run: psql -f scripts/test-supabase.sql
