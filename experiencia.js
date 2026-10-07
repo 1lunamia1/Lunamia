@@ -65,23 +65,72 @@ function agregarBusqueda(cfg){
   toolbar.querySelector("button").addEventListener("click",()=>{input.value="";if(desde)desde.value="";if(hasta)hasta.value="";apply();input.focus();});
   apply();
 }
-function hacerSelectBuscable(id,placeholder){
-  const select=document.getElementById(id);if(!select||document.getElementById(`${id}-busqueda`))return;
-  const options=[...select.options].map(o=>({value:o.value,text:o.text,disabled:o.disabled}));
-  select.setAttribute("aria-label",select.closest(".fg")?.querySelector("label")?.textContent||placeholder);
-  if(options.length<2)return;
-  const input=document.createElement("input");input.type="search";input.id=`${id}-busqueda`;input.placeholder=placeholder;input.className="select-search";input.setAttribute("aria-label",placeholder);
-  select.before(input);
-  input.addEventListener("input",()=>{
-    const terms=normalizarBusqueda(input.value).split(/\s+/).filter(Boolean),current=select.value;
-    const datos=id.includes("prov")?DB.proveedores:id.includes("prod")?DB.productos:DB.clientes;
-    const filtered=options.filter(o=>{
-      const extra=datos.find(d=>String(d.id)===o.value);
-      return !o.value||o.value===current||terms.every(t=>normalizarBusqueda(`${o.text} ${extra?.tel||""} ${extra?.codigo||""}`).includes(t));
-    });
-    select.replaceChildren(...filtered.map(o=>{const opt=new Option(o.text,o.value,false,o.value===current);opt.disabled=o.disabled;return opt;}));
-    select.value=current;
+function filtrarOpcionesBuscables(opciones,datos,consulta){
+  const terms=normalizarBusqueda(consulta).split(/\s+/).filter(Boolean);
+  const porId=new Map(datos.map(d=>[String(d.id),d]));
+  return opciones.filter(o=>{
+    if(!o.value||o.disabled)return false;
+    const extra=porId.get(String(o.value));
+    const text=normalizarBusqueda(`${o.text} ${extra?.tel||""} ${extra?.codigo||""} ${(extra?.variantes||[]).map(v=>v.cod).join(" ")}`);
+    const telefono=String(extra?.tel||"").replace(/\D/g,"");
+    return terms.every(t=>text.includes(t)||(!/[a-z]/i.test(t)&&t.replace(/\D/g,"").length>0&&telefono.includes(t.replace(/\D/g,""))));
   });
+}
+function limpiarBusquedaSelector(id){document.getElementById(id)?.buscador?.limpiar();}
+function hacerSelectBuscable(id,placeholder){
+  const select=document.getElementById(id);if(!select||select.tagName!=="SELECT")return;
+  if(select.buscador){select.buscador.limpiar();return;}
+  select.setAttribute("aria-label",select.closest(".fg")?.querySelector("label")?.textContent||(id==="cli-sel"?"Cliente de la venta":"Selección"));
+  const wrap=document.createElement("div");wrap.className="select-search-control";
+  const input=document.createElement("input");input.type="search";input.id=`${id}-busqueda`;input.placeholder=placeholder;input.className="select-search";input.autocomplete="off";
+  input.setAttribute("role","combobox");input.setAttribute("aria-label",placeholder);input.setAttribute("aria-autocomplete","list");input.setAttribute("aria-haspopup","listbox");input.setAttribute("aria-expanded","false");
+  const list=document.createElement("div");list.id=`${id}-resultados`;list.className="select-search-results";list.setAttribute("role","listbox");list.setAttribute("aria-label","Resultados de búsqueda");list.hidden=true;
+  input.setAttribute("aria-controls",list.id);
+  const status=document.createElement("div");status.id=`${id}-estado`;status.className="select-search-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+  input.setAttribute("aria-describedby",status.id);
+  wrap.append(input,status,list);select.before(wrap);
+  let resultados=[],active=-1;
+  const cerrar=()=>{list.hidden=true;input.setAttribute("aria-expanded","false");input.removeAttribute("aria-activedescendant");active=-1;};
+  const limpiar=()=>{input.value="";status.textContent="";list.replaceChildren();resultados=[];cerrar();};
+  select.buscador={limpiar};
+  const elegir=opcion=>{
+    if(![...select.options].some(o=>o.value===opcion.value&&!o.disabled))return;
+    select.value=opcion.value;
+    // Mantener el select completo: otros carritos y formularios pueden restaurar su cliente.
+    select.dispatchEvent(new Event("change",{bubbles:true}));
+    limpiar();status.textContent=`Seleccionado: ${opcion.text}`;
+  };
+  const mostrar=()=>{
+    const q=input.value.trim();if(!q){limpiar();return;}
+    const datos=id.includes("prov")?DB.proveedores:id.includes("prod")?DB.productos:DB.clientes;
+    const opciones=[...select.options].map(o=>({value:o.value,text:o.text,disabled:o.disabled}));
+    const coincidencias=filtrarOpcionesBuscables(opciones,datos,q);
+    resultados=coincidencias.slice(0,50);active=-1;list.replaceChildren();input.removeAttribute("aria-activedescendant");
+    status.textContent=coincidencias.length?`${coincidencias.length} coincidencia${coincidencias.length===1?"":"s"}. Seleccioná un resultado.${coincidencias.length>50?" Se muestran las primeras 50; escribí más para acotar.":""}`:"Sin coincidencias. Probá otro nombre, teléfono o código.";
+    for(const [i,o] of resultados.entries()){
+      const item=document.createElement("button");item.type="button";item.id=`${list.id}-${i}`;item.className="select-search-option";item.tabIndex=-1;item.setAttribute("role","option");item.setAttribute("aria-selected","false");
+      const name=document.createElement("span");name.textContent=o.text;item.append(name);
+      const tel=datos.find(d=>String(d.id)===o.value)?.tel;
+      if(tel){const phone=document.createElement("small");phone.textContent=tel;item.append(phone);}
+      item.addEventListener("mousedown",ev=>ev.preventDefault());item.addEventListener("click",()=>elegir(o));list.append(item);
+    }
+    list.hidden=!resultados.length;input.setAttribute("aria-expanded",String(resultados.length>0));
+  };
+  input.addEventListener("input",mostrar);
+  input.addEventListener("focus",()=>{if(input.value.trim())mostrar();});
+  input.addEventListener("keydown",ev=>{
+    if(ev.key==="Escape"&&!list.hidden){ev.stopPropagation();cerrar();return;}
+    if(["ArrowDown","ArrowUp"].includes(ev.key)){
+      if(list.hidden)mostrar();if(!resultados.length)return;ev.preventDefault();
+      active=ev.key==="ArrowDown"?(active+1)%resultados.length:(active<0?resultados.length-1:(active+resultados.length-1)%resultados.length);
+      [...list.children].forEach((item,i)=>item.setAttribute("aria-selected",String(i===active)));
+      const item=list.children[active];input.setAttribute("aria-activedescendant",item.id);item.scrollIntoView({block:"nearest"});
+    }else if(ev.key==="Enter"&&!list.hidden){
+      ev.preventDefault();if(active>=0)elegir(resultados[active]);else if(resultados.length===1)elegir(resultados[0]);
+    }else if(ev.key==="Tab")cerrar();
+  });
+  wrap.addEventListener("focusout",ev=>{if(!wrap.contains(ev.relatedTarget))cerrar();});
+  select.addEventListener("change",limpiar);
 }
 function aplicarAccesibilidad(root=document){
   root.querySelectorAll("i.ti").forEach(i=>i.setAttribute("aria-hidden","true"));
@@ -122,7 +171,7 @@ function ajustarVista(){
   });
   aplicarAccesibilidad(area);
   for(const id of ["cli-sel","ing-prov","np-prov","pago-cli","dev-cliente","ev-cliente-id"])hacerSelectBuscable(id,id.includes("prov")?"Buscar proveedor...":"Buscar cliente o teléfono...");
-  document.querySelectorAll('[id^="ev-item-prod-"]').forEach(s=>hacerSelectBuscable(s.id,"Buscar producto o código..."));
+  document.querySelectorAll('select[id^="ev-item-prod-"]').forEach(s=>hacerSelectBuscable(s.id,"Buscar producto o código..."));
 }
 function agregarAccionCabecera(text,handler){
   const ph=document.querySelector("#main-area .ph");if(!ph)return;

@@ -6,6 +6,17 @@ Las correcciones están implementadas en esta versión. Los hallazgos de integri
 
 La aplicación sigue guardando un documento JSON compartido: el control de concurrencia detecta y bloquea conflictos, pero no combina automáticamente ediciones de dos operadores. Los datos históricos incompletos requieren revisión; las correcciones no recalculan silenciosamente saldos anteriores.
 
+### Corrección posterior: búsqueda de clientes en Ventas
+
+- Se reprodujo que escribir filtraba las opciones ocultas del selector, pero seguía mostrando Consumidor final y ningún resultado visible. El filtro también podía impedir restaurar el cliente de otra venta pausada.
+- Ahora se muestran coincidencias con nombre y teléfono para seleccionar con clic o flechas/Enter. Se informa cuando no hay coincidencias. El selector original conserva todas sus opciones; buscar nunca cambia el cliente por sí solo.
+- Teléfonos encontrados sin importar espacios, guiones, paréntesis o prefijo; nombres sin acentos y en cualquier orden de palabras.
+- Al pausar, retomar o cobrar se limpia la consulta y se actualizan cliente, deuda y favor visibles. Se verifica que la venta confirmada use el cliente elegido.
+- Se corrigió el mismo componente en cobros de deuda, devoluciones, edición de ventas, selección de productos del editor y proveedores. Lee las opciones actuales al reabrir; no ofrece clientes ajenos al formulario de cobro. La inicialización del editor se limita a selects reales para evitar buscadores duplicados sobre sus controles auxiliares.
+- Los archivos modificados llevan versión en su URL para que una recarga cargue la corrección.
+- Verificación en navegador con datos locales: búsqueda por nombre/teléfono, clic/teclado, búsqueda inexistente sin cambiar el cliente, dos carritos con distintos clientes, confirmación de venta con cliente #1, reabrir cobros con un cliente nuevo, editor por código de variante, devoluciones y proveedores. A 390 px, resultados dentro del ancho disponible. Escape cierra primero la lista de resultados y después el modal.
+- Capturas locales: `output/playwright/busqueda-clientes-antes.png`, `busqueda-clientes-resultados.png`, `busqueda-clientes-movil.png`. Datos de prueba, sin operaciones en Supabase de producción.
+
 ### Correcciones y problemas similares encontrados
 
 | Área | Resultado implementado |
@@ -42,7 +53,7 @@ No se agregaron buscadores a resúmenes, cierre, análisis o guía estática, do
 
 ### Validación realizada
 
-- **76 pruebas automatizadas aprobadas**: 20 de acreditaciones, 39 de integridad y 17 de persistencia. Ejecutan las funciones reales de la aplicación con datos aislados; no conectan a producción.
+- **84 pruebas automatizadas aprobadas**: 20 de acreditaciones, 39 de integridad, 17 de persistencia y 8 de búsqueda. Ejecutan las funciones reales de la aplicación con datos aislados; no conectan a producción.
 - Migración ejecutada en **PostgreSQL 16 aislado**: conserva el documento existente, se puede repetir, elimina políticas amplias, restringe usuarios no autorizados, permite al usuario autorizado leer solo `main` y rechaza versiones incorrectas/JSON inválido. Script: `scripts/test-supabase.sql` (solo base `lunamia_qa`).
 - **23 vistas revisadas en navegador**, incluyendo Inicio, en escritorio y a 390 × 844 px. Sin desbordamiento horizontal del documento; tablas anchas conservan desplazamiento propio. Renderizado verificado con registros de venta, gasto, transferencia y devolución.
 - Pruebas de buscador sin acentos, sin coincidencias, limpiar, fechas, conservación del cursor; menú móvil, foco del modal, Tab, Escape, cabecera y pie visibles. Un modal con 20 métodos de pago mantiene el pie dentro de la pantalla; cambiar el método conserva el foco. Consola: **0 errores y 0 advertencias**.

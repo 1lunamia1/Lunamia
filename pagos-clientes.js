@@ -37,7 +37,6 @@ function editarPagoCliente(id){
   const select=document.getElementById("pago-cli");
   if(![...select.options].some(o=>o.value===String(p.cliente_id)))select.add(new Option(p.cliente,String(p.cliente_id)));
   select.value=p.cliente_id;
-  document.getElementById("pago-cli-busqueda")?.remove();
   if(typeof hacerSelectBuscable==="function")hacerSelectBuscable("pago-cli","Buscar cliente o teléfono...");
   editingPagoClienteId=id;pagoClienteSnapshot=JSON.stringify(p);
   document.getElementById("pago-cli-monto").value=p.monto;

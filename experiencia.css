@@ -29,6 +29,14 @@
 .search-dates label{font-size:11px;color:var(--gt);display:flex;align-items:center;gap:6px;margin:0;}
 .search-dates input{width:145px;}
 .select-search{margin-bottom:5px;font-size:12px;}
+.select-search-control{margin-bottom:5px;}
+.select-search-status{font-size:11px;color:var(--gt);line-height:1.4;}
+.select-search-status:not(:empty){margin:4px 0 6px;}
+.select-search-results{max-height:220px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--crb);border-radius:7px;background:var(--bl);margin-bottom:6px;}
+.select-search-option{display:flex;flex-direction:column;gap:3px;width:100%;padding:10px 12px;border:0;border-bottom:1px solid var(--crb);background:var(--bl);color:var(--ng);text-align:left;font:inherit;cursor:pointer;}
+.select-search-option:last-child{border-bottom:0;}
+.select-search-option:hover,.select-search-option[aria-selected="true"]{background:var(--azbg);}
+.select-search-option small{color:var(--gt);font-size:11px;}
 .modal{display:flex;flex-direction:column;max-height:calc(100dvh - 32px);overflow:hidden;}
 .mh,.mf,.mtabs{flex-shrink:0;}
 .mc{overflow:auto;min-height:0;overscroll-behavior:contain;}

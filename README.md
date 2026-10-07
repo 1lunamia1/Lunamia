@@ -68,10 +68,10 @@ Anular un pago revierte su aplicación a deuda y favor; si el favor ya fue utili
 Con Node.js disponible, sin instalar dependencias:
 
 ```bash
-node --test scripts/test-acreditaciones.cjs scripts/test-integridad.cjs scripts/test-persistencia.cjs
+node --test scripts/test-acreditaciones.cjs scripts/test-integridad.cjs scripts/test-persistencia.cjs scripts/test-busquedas.cjs
 ```
 
-Las 76 pruebas cubren acreditaciones, stock concurrente entre carritos, importes, devoluciones, cuentas, edición/anulación, referencias y guardado con errores/conflictos. Usan datos aislados y no conectan a Supabase.
+Las 84 pruebas cubren acreditaciones, stock concurrente entre carritos, importes, devoluciones, cuentas, edición/anulación, referencias, búsquedas por nombre/teléfono/código y guardado con errores/conflictos. Usan datos aislados y no conectan a Supabase.
 
 La prueba SQL requiere PostgreSQL 16 en una base desechable llamada `lunamia_qa`, sin tablas de la app ni roles `anon`/`authenticated` previos, ejecutada como administrador local:
 
@@ -119,6 +119,8 @@ Los carritos pausados siguen en memoria: no se recuperan al recargar. En demo lo
 ## Navegación y búsquedas
 
 Historiales, caja, cuentas, cobros, categorías y proveedores incluyen buscadores; las listas financieras también permiten Desde/Hasta. Ignoran acentos y conservan los filtros durante la sesión. **Limpiar filtros** vuelve a mostrar todos los registros. Los totales superiores mantienen el conjunto completo, como indica la interfaz. Ctrl/Cmd+K enfoca la búsqueda de la sección.
+
+En el punto de venta, escribí en **Buscar cliente o teléfono** y elegí un resultado visible. También podés usar flechas y Enter. Los números se encuentran aunque estén guardados con espacios, guiones o prefijo; buscar no cambia el cliente hasta seleccionarlo. El selector conserva todos los clientes para retomar carritos pausados. Los formularios de cobros, devoluciones, edición de ventas y proveedores usan el mismo componente, con las opciones actuales de cada formulario.
 
 Las acciones habituales aparecen en cabeceras y al principio de Inicio. En móvil el menú se pliega y Carrito/Cobrar quedan al pie del punto de venta. Los modales mantienen visible el pie; Tab conserva el foco y Escape cierra.
 

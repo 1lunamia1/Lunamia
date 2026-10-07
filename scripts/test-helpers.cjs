@@ -16,7 +16,7 @@ function app({config={},storage=new Map()}={}){
     alert:()=>{},confirm:()=>true,
     document:{readyState:'loading',getElementById:element,addEventListener(){},querySelectorAll:()=>[],body:{insertAdjacentHTML(){}}},
   });
-  for(const file of ['app.js','integridad.js','persistencia.js','acreditaciones.js','pagos-clientes.js','editar-venta.js']){
+  for(const file of ['app.js','integridad.js','persistencia.js','acreditaciones.js','pagos-clientes.js','editar-venta.js','experiencia.js']){
     vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context,{filename:file});
   }
   const run=code=>vm.runInContext(code,context);

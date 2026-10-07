@@ -19,8 +19,8 @@ jobs:
       - name: Sintaxis JavaScript
         run: |
           while IFS= read -r -d '' file; do node --check "$file"; done < <(git ls-files -z '*.js' '*.cjs')
-      - name: Integridad, acreditaciones y persistencia
-        run: node --test scripts/test-acreditaciones.cjs scripts/test-integridad.cjs scripts/test-persistencia.cjs
+      - name: Integridad, acreditaciones, persistencia y búsquedas
+        run: node --test scripts/test-acreditaciones.cjs scripts/test-integridad.cjs scripts/test-persistencia.cjs scripts/test-busquedas.cjs
   supabase:
     runs-on: ubuntu-latest
     services:

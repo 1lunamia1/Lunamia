@@ -1219,6 +1219,7 @@ function renderPDV(){
   renderPausados(); renderProdGrid(); renderCarrito();
   const cli=document.getElementById("cli-sel");
   if(cli && carrito().clienteId) cli.value=carrito().clienteId;
+  onCliSelChange();
   // Focus en el buscador al abrir el PDV
   setTimeout(()=>{ const s=document.getElementById("pdv-search-input"); if(s&&(!window.matchMedia||!window.matchMedia('(max-width:640px)').matches))s.focus(); },50);
 }
@@ -1375,6 +1376,8 @@ function pausarVenta(){
   renderPausados();renderCarrito();
   document.getElementById("cart-titulo").textContent=`Venta ${id}`;
   document.getElementById("cli-sel").value="";
+  if(typeof limpiarBusquedaSelector==="function")limpiarBusquedaSelector("cli-sel");
+  onCliSelChange();
 }
 function renderPausados(){
   const s=document.getElementById("pausados-strip");if(!s)return;
@@ -1388,6 +1391,8 @@ function activarCarrito(i){
   if(ct)ct.textContent=carritos[i].nombre;
   const cs=document.getElementById("cli-sel");
   if(cs)cs.value=carritos[i].clienteId||"";
+  if(typeof limpiarBusquedaSelector==="function")limpiarBusquedaSelector("cli-sel");
+  onCliSelChange();
   renderPausados();renderCarrito();
 }
 
@@ -2051,6 +2056,7 @@ function procesarVenta(){
   carritos[carritoIdx].items=[];
   carritos[carritoIdx].clienteId="";
   const selectorCliente=document.getElementById("cli-sel");if(selectorCliente)selectorCliente.value="";
+  if(typeof limpiarBusquedaSelector==="function")limpiarBusquedaSelector("cli-sel");
   const clienteInfo=document.getElementById("pdv-cliente-info");if(clienteInfo)clienteInfo.textContent="";
   pagosMethods=[{tipo:"efectivo",monto:0}];
   persistDBSoon();
