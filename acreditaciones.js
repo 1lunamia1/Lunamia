@@ -3,7 +3,7 @@ function esPagoTarjeta(pago){
   return ["debito","credito"].includes(pagoTipoNormalizado(pago?.tipo||pago?.metodo));
 }
 function pagoIngresoPendiente(pago){
-  return esPagoTarjeta(pago)&&pago.acreditacion==="pendiente";
+  return esPagoTarjeta(pago)&&pago.acreditacion==="pendiente"&&Number(pago.monto)>0;
 }
 function prepararPagosConAcreditacion(pagos){
   return pagos.map(p=>esPagoTarjeta(p)&&!p.acreditacion?{...p,acreditacion:"pendiente"}:{...p});
@@ -19,14 +19,14 @@ function totalTarjetasPendientes(){
   return [...DB.ventas,...(DB.pagosClientes||[])].reduce((a,v)=>a+montoIngresoPendienteVenta(v),0);
 }
 function ingresoCajaPagoVenta(pago){
-  if(pagoIngresoPendiente(pago))return null;
+  if(pago.monto===0||pagoIngresoPendiente(pago))return null;
   const medio=PAGO_CAJA_MAP[pago.tipo];
   if(!medio)return null;
   if(esPagoTarjeta(pago)&&pago.acreditacion==="acreditada"){
     return {caja:pago.caja_acreditacion,medio:pago.medio_acreditacion,monto:Number(pago.monto_neto)||0};
   }
   // Los pagos históricos sin estado ya impactaron en caja: no migrarlos.
-  return {caja:"principal",medio,monto:Number(pago.monto)||0};
+  return {caja:pago.caja_cobro||"principal",medio,monto:Number(pago.monto)||0};
 }
 function registrarIngresoPagoVenta(venta,pago,indice){
   const ingreso=ingresoCajaPagoVenta(pago);
@@ -35,9 +35,9 @@ function registrarIngresoPagoVenta(venta,pago,indice){
   ajustarSaldoCaja(ingreso.caja,ingreso.medio,ingreso.monto);
   const movimiento={
     id:nextId(DB.movimientos),
-    fecha:acreditada?shortFromISO(pago.fecha_acreditacion):venta.fecha,
-    fechaISO:acreditada?pago.fecha_acreditacion:fechaISOFromVenta(venta),
-    hora:acreditada?pago.hora_acreditacion:(venta.hora||hora()),
+    fecha:acreditada?shortFromISO(pago.fecha_acreditacion):pago.fecha_cobro?shortFromISO(pago.fecha_cobro):venta.fecha,
+    fechaISO:acreditada?pago.fecha_acreditacion:pago.fecha_cobro||fechaISOFromVenta(venta),
+    hora:acreditada?pago.hora_acreditacion:(pago.hora_cobro||venta.hora||hora()),
     tipo:venta.tipo==="pago_cliente"?"pago_cliente":"venta",
     concepto:venta.tipo==="pago_cliente"?`Cobro cta cte — ${venta.cliente}${acreditada?` · comisión ${fmt(pago.comision)}`:""}`:acreditada?`Ingreso ${pagoLabel(pago.tipo)} venta #${venta.id} · comisión ${fmt(pago.comision)}`:`Venta #${venta.id} — ${normalizarItemsVenta(venta)[0]?.nombre||"Venta"}`,
     caja:ingreso.caja,medio:ingreso.medio,monto:ingreso.monto,signo:1,

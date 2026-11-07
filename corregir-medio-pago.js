@@ -12,6 +12,18 @@ function mediosParaCorregirPago(pago){
   return medios.filter(tipo=>tipo!==pago.tipo);
 }
 
+function actualizarMetodoPagosVenta(venta){
+  const tipos=[...new Set(venta.pagos.filter(p=>Number(p.monto)>0).map(p=>pagoTipoNormalizado(p.tipo||p.metodo)))];
+  venta.metodo=tipos.map(pagoLabel).join(" + ")||"Sin cobros registrados";
+  venta.metodo_pago=tipos.length>1?"mixto":tipos[0]||"sin_cobros";
+}
+
+function refrescarVistaCobro(){
+  const ficha=Number(document.getElementById("ficha-cliente")?.dataset?.clienteId);
+  if(ficha)verFichaCli(ficha);
+  else renderPage(currentSub[currentMod]);
+}
+
 function movimientoParaCorregirPago(venta,pagos,indice){
   const movimientos=movimientosDeVenta(venta).filter(m=>m.tipo==="venta"&&m.signo===1);
   const pago=pagos[indice];
@@ -73,8 +85,7 @@ function corregirMedioPagoVenta(ventaId,indice,tipo,snapshot){
   }
 
   venta.pagos=venta.pagos?.length?venta.pagos.map((p,i)=>i===indice?nuevo:p):[nuevo];
-  venta.metodo=[...new Set(venta.pagos.map(p=>pagoLabel(p.tipo||p.metodo)))].join(" + ");
-  venta.metodo_pago=venta.pagos.length===1?tipo:"mixto";
+  actualizarMetodoPagosVenta(venta);
   venta.historial_cambios=[...(venta.historial_cambios||[]),{
     fecha:new Date().toISOString(),accion:"correccion_medio_pago",pago_indice:indice,
     antes:cloneData(pagoOriginal),despues:cloneData(nuevo),movimiento_antes:movimientoAntes,
@@ -104,7 +115,7 @@ function abrirCorreccionMedio(ventaId,indice=null){
   openOv("ov-corregir-medio");
 }
 
-function abrirCorreccionMedioDesdeCaja(id){
+function abrirCorreccionMedioDesdeCaja(id,corregirImporte=false){
   const m=DB.movimientos.find(m=>m.id===id&&m.tipo==="venta"&&m.signo===1);
   if(!m)return;
   const ventaId=ventaIdDeMovimiento(m);
@@ -113,7 +124,8 @@ function abrirCorreccionMedioDesdeCaja(id){
   const pagos=normalizarPagosVenta(venta);
   const indice=pagos.findIndex((p,i)=>mediosParaCorregirPago(p).length&&movimientoParaCorregirPago(venta,pagos,i)===m);
   if(indice<0){alert("No se pudo identificar el pago exacto de este movimiento.");return;}
-  abrirCorreccionMedio(ventaId,indice);
+  if(corregirImporte)abrirCorreccionImporte(ventaId,indice);
+  else abrirCorreccionMedio(ventaId,indice);
 }
 
 function seleccionarPagoParaCorregir(){
@@ -121,7 +133,7 @@ function seleccionarPagoParaCorregir(){
   const pago=normalizarPagosVenta(venta)[Number(document.getElementById("cm-pago").value)];
   document.getElementById("cm-medio").innerHTML='<option value="">Elegí el medio correcto</option>'+mediosParaCorregirPago(pago).map(tipo=>`<option value="${tipo}">${escapeHTML(pagoLabel(tipo))}</option>`).join("");
   let info="Se conserva el importe de este pago. Si lo corregís a tarjeta, el ingreso quedará pendiente de acreditación.";
-  if(pagoIngresoPendiente(pago))info="Si elegís efectivo, transferencia o Mercado Pago, se registrará el ingreso con la fecha de la venta.";
+  if(pagoIngresoPendiente(pago))info=`Si elegís efectivo, transferencia o Mercado Pago, el ingreso usará la fecha ${pago.fecha_cobro?"del cobro":"de la venta"}.`;
   else if(pago?.acreditacion==="acreditada")info="Podés corregir el tipo de tarjeta. Se conservan el neto, la comisión, el destino y la fecha de acreditación.";
   else if(esPagoTarjeta(pago))info="Este pago histórico ya figura ingresado. La corrección conserva el importe ingresado.";
   document.getElementById("cm-info").textContent=info;
@@ -133,5 +145,5 @@ function confirmarCorreccionMedio(event){
   const tipo=document.getElementById("cm-medio").value;
   if(!corregirMedioPagoVenta(correccionMedioVentaId,indice,tipo,correccionMedioSnapshot))return;
   closeOv("ov-corregir-medio");
-  renderPage(currentSub[currentMod]);
+  refrescarVistaCobro();
 }

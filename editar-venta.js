@@ -621,7 +621,8 @@ function guardarCambiosVenta() {
 function actualizarFechaMovimientosVenta(venta, fechaHora) {
   for(const movimiento of movimientosDeVenta(venta)){
     // La acreditación registra el ingreso del dinero en una fecha propia.
-    if(movimiento.tipo === "venta" && !movimiento.acreditacion_tarjeta)Object.assign(movimiento, fechaHora);
+    const pago=venta.pagos?.[movimiento.pago_indice];
+    if(movimiento.tipo === "venta" && !movimiento.acreditacion_tarjeta && !pago?.fecha_cobro)Object.assign(movimiento, fechaHora);
   }
   if(fechaHora.fechaISO){
     const cliente=clienteDeVenta(venta);

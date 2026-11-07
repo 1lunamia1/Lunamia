@@ -45,7 +45,7 @@ function movimientosReversionVenta(venta){
   if(existentes.length)return existentes;
   return normalizarPagosVenta(venta).map(p=>ingresoCajaPagoVenta(p)).filter(Boolean).map(i=>({...i,signo:1,tipo:"venta"}));
 }
-function validarReversionCaja(movimientos){
+function validarReversionCaja(movimientos,reemplazos=[]){
   const cambios={};
   const sumar=(caja,medio,monto)=>{if(caja&&["efectivo","mercadopago","debito","credito"].includes(cajaMedio(medio))){const k=`${caja}|${cajaMedio(medio)}`;cambios[k]=(cambios[k]||0)+monto;}};
   for(const m of movimientos){
@@ -55,9 +55,10 @@ function validarReversionCaja(movimientos){
       sumar(m.destino||tr?.destino,m.medioDestino||tr?.medioDestino||m.medio,-Number(m.monto));
     }else sumar(m.caja,m.medio,-(Number(m.signo)||1)*Number(m.monto));
   }
+  for(const m of reemplazos)sumar(m.caja,m.medio,(Number(m.signo)||1)*Number(m.monto));
   for(const [key,delta] of Object.entries(cambios)){
     const [caja,medio]=key.split("|");
-    if(saldoCaja(caja,medio)+delta< -0.005){alert(`No se puede revertir: saldo insuficiente en ${cajaLabel(caja)} (${medioLabel(medio)}). El dinero pudo utilizarse en otra operación.`);return false;}
+    if(redondearImporte(delta)!==0&&saldoCaja(caja,medio)+delta< -0.005){alert(`No se puede revertir: saldo insuficiente en ${cajaLabel(caja)} (${medioLabel(medio)}). El dinero pudo utilizarse en otra operación.`);return false;}
   }
   return true;
 }
@@ -93,6 +94,9 @@ function disponibleDevolucion(venta,cod){
   return vendidos-DB.devoluciones.filter(d=>d.venta_id===venta.id&&d.producto===cod&&!d.anulada).reduce((a,d)=>a+(Number(d.cantidad)||1),0);
 }
 function resolucionDevolucion(d){return d.resolucion||"favor";}
+function reintegrosComprometidos(ventaId,excluirId){
+  return redondearImporte(DB.devoluciones.filter(d=>d.venta_id===ventaId&&d.id!==excluirId&&!d.anulada&&resolucionDevolucion(d)!=="favor").reduce((total,d)=>total+d.monto,0));
+}
 function totalReintegrosPendientes(){
   return redondearImporte(DB.devoluciones.filter(d=>!d.anulada&&resolucionDevolucion(d)==="pendiente").reduce((total,d)=>total+d.monto,0));
 }
@@ -115,7 +119,7 @@ function aplicarResolucionDevolucion(d,venta,cliente,resolucion,reintegro){
   if(resolucion!=="favor"){
     if(!importeValido(d.monto)){alert("Ingresá un importe de reintegro mayor a cero.");return false;}
     const cobrado=normalizarPagosVenta(venta).filter(p=>Object.hasOwn(PAGO_CAJA_MAP,p.tipo)).reduce((a,p)=>a+p.monto,0);
-    const comprometido=DB.devoluciones.filter(otra=>otra.id!==d.id&&otra.venta_id===venta.id&&!otra.anulada&&resolucionDevolucion(otra)!=="favor").reduce((a,otra)=>a+otra.monto,0);
+    const comprometido=reintegrosComprometidos(venta.id,d.id);
     if(d.monto>redondearImporte(cobrado-comprometido)){
       alert("El importe supera lo cobrado en los medios de pago de la venta, descontando reintegros ya registrados o pendientes.");return false;
     }

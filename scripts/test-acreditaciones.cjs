@@ -301,6 +301,82 @@ test('La corrección rechaza una venta modificada desde que se abrió el formula
   assert.equal(a.run("corregirMedioPagoVenta(1,0,'transferencia',correccionMedioSnapshot)"),false);
   assert.equal(a.run('JSON.stringify(DB)'),antes);
 });
+function corregirImportes(a,importes,cobro=null){
+  return a.run(`guardarCorreccionImporte(1,JSON.stringify(DB.ventas[0]),${JSON.stringify(importes)},${JSON.stringify(cobro)})`);
+}
+test('Corregir un faltante ajusta solo la diferencia en Caja y permite cobrar el saldo aparte',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  a.run("DB.ventas[0].fechaISO=DB.movimientos[0].fechaISO='2025-04-01';DB.cajas.principal.efectivo=5000;");
+  const antes=a.run('JSON.stringify([DB.productos,DB.clientes])');
+  assert.equal(corregirImportes(a,[{indice:0,monto:14000}]),true);
+  assert.equal(a.run('DB.movimientos[0].id'),1);
+  assert.equal(a.run('DB.movimientos[0].monto'),14000);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),0);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),5000);
+  assert.equal(corregirImportes(a,[],{tipo:'transferencia',monto:5000}),true);
+  assert.equal(a.run('DB.movimientos.length'),2);
+  assert.equal(a.run('DB.movimientos[0].fechaISO'),a.run('toDateInput()'));
+  assert.equal(a.run('DB.cajas.principal.mercadopago'),30000);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),0);
+  assert.equal(a.run('DB.ventas[0].total'),19000);
+  assert.equal(a.run('JSON.stringify([DB.productos,DB.clientes])'),antes);
+  a.run("actualizarFechaMovimientosVenta(DB.ventas[0],{fechaISO:'2025-04-02',fecha:'02/04',hora:'10:00'})");
+  assert.equal(a.run('DB.movimientos[0].fechaISO'),a.run('toDateInput()'));
+  assert.equal(a.run('DB.movimientos[1].fechaISO'),'2025-04-02');
+});
+test('Corregir importes de una venta mixta aplica el reparto entero y conserva la acreditación ajena',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:5000},{tipo:'transferencia',monto:4000},{tipo:'credito',monto:10000}]);
+  assert.equal(acreditar(a,{indice:2,comision:500}),true);
+  const tarjeta=a.run('JSON.stringify([DB.ventas[0].pagos[2],DB.movimientos[0]])');
+  assert.equal(corregirImportes(a,[{indice:0,monto:3000},{indice:1,monto:6000}]),true);
+  assert.equal(a.run('JSON.stringify([DB.ventas[0].pagos[2],DB.movimientos[0]])'),tarjeta);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),0);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),53000);
+  assert.equal(a.run('DB.cajas.principal.mercadopago'),40500);
+  assert.equal(a.run('DB.ventas[0].historial_cambios.at(-1).pagos.length'),2);
+});
+test('Corregir el bruto y neto acreditados ajusta Caja y conserva la fecha y destino del depósito',()=>{
+  const a=app();vender(a,[{tipo:'credito',monto:19000}]);
+  assert.equal(acreditar(a,{caja:'reinversion',medio:'efectivo'}),true);
+  const antes=a.run('JSON.stringify(DB)');
+  assert.equal(corregirImportes(a,[{indice:0,monto:18000,neto:18500}]),false);
+  assert.equal(a.run('JSON.stringify(DB)'),antes);
+  assert.equal(corregirImportes(a,[{indice:0,monto:18000,neto:17500}]),true);
+  assert.equal(a.run('DB.ventas[0].pagos[0].comision'),500);
+  assert.equal(a.run('DB.movimientos[0].fechaISO'),'2026-10-07');
+  assert.equal(a.run('DB.movimientos[0].caja'),'reinversion');
+  assert.equal(a.run('DB.movimientos[0].monto'),17500);
+  assert.equal(a.run('DB.cajas.reinversion.efectivo'),17500);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),1000);
+});
+test('Los importes corregidos respetan el total de venta, la cuenta corriente y los reintegros comprometidos',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:9000},{tipo:'cuenta',monto:10000}]);
+  a.run("DB.devoluciones.push({id:1,venta_id:1,monto:5000,resolucion:'pendiente'})");
+  const antes=a.run('JSON.stringify(DB)');
+  for(const [indice,monto] of [[0,4000],[0,10000],[1,9000]]){
+    assert.equal(corregirImportes(a,[{indice,monto}]),false);
+    assert.equal(a.run('JSON.stringify(DB)'),antes);
+  }
+  assert.equal(corregirImportes(a,[{indice:0,monto:6000}]),true);
+  assert.equal(a.run('DB.clientes[0].deuda'),10000);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),3000);
+});
+test('Una tarjeta pendiente corregida a cero queda fuera de acreditaciones y se puede recuperar',()=>{
+  const a=app();vender(a,[{tipo:'debito',monto:19000}]);
+  assert.equal(corregirImportes(a,[{indice:0,monto:0}]),true);
+  assert.equal(a.run('ingresoPendienteVenta(DB.ventas[0])'),false);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),19000);
+  assert.equal(corregirImportes(a,[{indice:0,monto:10000}]),true);
+  assert.equal(a.run('totalTarjetasPendientes()'),10000);
+  assert.equal(a.run('DB.movimientos.length'),0);
+});
+test('Una diferencia histórica no crea un saldo por cobrar sin una corrección registrada',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  a.run('DB.ventas[0].pagos[0].monto=DB.movimientos[0].monto=18000');
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),0);
+  assert.equal(corregirImportes(a,[{indice:0,monto:17000}]),true);
+  assert.equal(a.run('saldoPendienteVenta(DB.ventas[0])'),2000);
+});
 test('Un importe negativo en un pago mixto no crea una tarjeta mayor al total de venta',()=>{
   const a=app();vender(a,[{tipo:'efectivo',monto:-1000},{tipo:'credito',monto:20000}]);
   assert.equal(a.run('DB.ventas.length'),0);

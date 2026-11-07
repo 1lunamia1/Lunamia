@@ -138,6 +138,24 @@
   </form>
 </div>
 
+<!-- IMPORTE COBRADO -->
+<div class="ov" id="ov-corregir-importe">
+  <form class="modal" style="max-width:500px;" onsubmit="confirmarCorreccionImporte(event)">
+    <div class="mh"><span id="ci-titulo" class="mt">Corregir importe cobrado</span><button type="button" class="btn-ghost" onclick="closeOv('ov-corregir-importe')" aria-label="Cerrar"><i class="ti ti-x"></i></button></div>
+    <div class="mc">
+      <div id="ci-venta" class="notif notif-az"></div>
+      <div id="ci-pagos"></div>
+      <div id="ci-cobro" hidden>
+        <div class="fg"><label for="ci-cobro-monto">Importe recibido</label><input id="ci-cobro-monto" type="number" min="0.01" step="0.01" required oninput="actualizarSaldoCorreccion()"></div>
+        <div class="fg"><label for="ci-cobro-medio">Medio de pago</label><select id="ci-cobro-medio" onchange="actualizarSaldoCorreccion()"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">Mercado Pago</option><option value="debito">Tarjeta débito</option><option value="credito">Tarjeta crédito</option></select></div>
+      </div>
+      <div id="ci-saldo" class="notif notif-am" aria-live="polite"></div>
+      <div id="ci-caja" class="notif notif-az" aria-live="polite"></div>
+    </div>
+    <div class="mf"><button type="button" class="btn btn-out" onclick="closeOv('ov-corregir-importe')">Cancelar</button><button type="submit" class="btn btn-ng">Guardar</button></div>
+  </form>
+</div>
+
 <!-- DEVOLUCIÓN -->
 <div class="ov" id="ov-dev">
 <div class="modal" style="max-width:440px;">
@@ -522,14 +540,15 @@ function syncTallesStrip() {
 <script src="config.js"></script>
 <script src="data/local-demo.js"></script>
 <script src="data/import-summary.js"></script>
-<script src="app.js?v=20261107-medio-pago"></script>
-<script src="integridad.js?v=20261107-devoluciones"></script>
+<script src="app.js?v=20261107-importe-cobrado"></script>
+<script src="integridad.js?v=20261107-importe-cobrado"></script>
 <script src="persistencia.js?v=20261107-devoluciones"></script>
-<script src="acreditaciones.js?v=20261107-medio-pago"></script>
-<script src="corregir-medio-pago.js"></script>
-<script src="pagos-clientes.js?v=20261107-medio-pago"></script>
+<script src="acreditaciones.js?v=20261107-importe-cobrado"></script>
+<script src="corregir-medio-pago.js?v=20261107-importe-cobrado"></script>
+<script src="corregir-importe-cobrado.js"></script>
+<script src="pagos-clientes.js?v=20261107-importe-cobrado"></script>
 <script src="descuentos-conjuntos.js"></script>
-<script src="editar-venta.js?v=20261107-devoluciones"></script>
+<script src="editar-venta.js?v=20261107-importe-cobrado"></script>
 <script src="dashboard.js"></script>
 <script src="experiencia.js?v=20261007-listados-3"></script>
 </body>

@@ -2236,8 +2236,8 @@ function renderHistorialVentas(){
           <td style="font-size:11px;color:var(--gt);">${v.items}</td>
           <td><span class="bd ${ventaPendiente(v)?"bd-bj":v.metodo==="Efectivo"?"bd-ok":v.metodo==="Cuenta cte."?"bd-bj":"bd-az"}" style="font-size:10px;">${ventaPendiente(v)?"Pendiente":v.metodo}</span></td>
           <td style="font-weight:500;">${fmt(v.total)}</td>
-          <td style="white-space:normal;">${estadoIngresoVentaHTML(v)||"—"}</td>
-          <td><div class="row-actions"><button class="btn-icon" onclick="editarVenta(${v.id}, true)" title="${ventaPendiente(v)?"Editar / cobrar":"Editar"}"><i class="ti ${ventaPendiente(v)?"ti-cash":"ti-pencil"}" style="font-size:11px;"></i></button>${normalizarPagosVenta(v).some(p=>mediosParaCorregirPago(p).length)?botonCorreccionMedio(`abrirCorreccionMedio(${v.id})`):""}</div></td>
+          <td style="white-space:normal;"><div class="row-actions">${estadoIngresoVentaHTML(v)+mostrarSaldoPendienteVenta(v)||"—"}</div></td>
+          <td><div class="row-actions"><button class="btn-icon" onclick="editarVenta(${v.id}, true)" title="${ventaPendiente(v)?"Editar / cobrar":"Editar"}"><i class="ti ${ventaPendiente(v)?"ti-cash":"ti-pencil"}" style="font-size:11px;"></i></button>${accionesCobroVenta(v)}</div></td>
         </tr>`).join("")||`<tr><td colspan="9" style="text-align:center;color:var(--gc);padding:20px;">${ventasSoloIngresoPendiente?"Sin ingresos de tarjeta pendientes":"Sin ventas registradas"}</td></tr>`}</tbody>
       </table></div>
     </div>
@@ -2314,12 +2314,23 @@ function renderClientesLista(){
 
 function verFichaCli(id){
   const c=DB.clientes.find(x=>x.id===id);
+  if(!c)return;
   const i=DB.clientes.findIndex(x=>x.id===id);
   const pct=Math.min(100,Math.round(c.deuda/c.limite*100));
   const fc=estadoClienteActual(c)==="vencida"?"var(--rj)":estadoClienteActual(c)==="proximo"?"var(--am)":"var(--vd)";
   const ptsNext={Nuevo:50,Bronce:200,Plata:500,Oro:9999}[c.nivel]||9999;
+  const ventas=new Map(DB.ventas.filter(v=>!v.eliminada&&clienteDeVenta(v)?.id===id).map(v=>[v.id,v]));
+  const registrados=new Set(c.historial.map(h=>h.venta_id));
+  const historial=[...c.historial];
+  for(const v of ventas.values()){
+    if(registrados.has(v.id))continue;
+    historial.push({venta_id:v.id,concepto:`${ventaPendiente(v)?"Reserva":"Compra"} · Venta #${v.id}`,fecha:v.fecha,
+      fechaISO:v.fechaISO,hora:v.hora,monto:v.total,tipo:"venta"});
+  }
+  historial.sort((a,b)=>`${b.fechaISO||""} ${b.hora||""}`.localeCompare(`${a.fechaISO||""} ${a.hora||""}`));
+  const cobros=new Map((DB.pagosClientes||[]).filter(p=>!p.eliminada&&p.cliente_id===id).map(p=>[p.id,p]));
   document.getElementById("main-area").innerHTML=`
-  <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+  <div id="ficha-cliente" data-cliente-id="${id}" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="ph">
       <div style="display:flex;align-items:center;gap:10px;">
         <button class="btn-ghost btn-sm" onclick="showSub('clientes-lista')"><i class="ti ti-arrow-left"></i>Volver</button>
@@ -2361,18 +2372,25 @@ function verFichaCli(id){
       <div class="ficha-right">
         <div class="sect-title">Historial completo</div>
         <div style="background:var(--bl);border:0.5px solid var(--crb);border-radius:9px;padding:8px 12px;">
-          ${c.historial.length?c.historial.map(h=>`
+          ${historial.length?historial.map(h=>{
+            const venta=ventas.get(h.venta_id);
+            const cobro=cobros.get(h.pago_cliente_id);
+            const acciones=venta?accionesCobroVenta(venta)+mostrarSaldoPendienteVenta(venta):
+              cobro&&Array.isArray(cobro.pagos)&&!cobro.pagos.some(p=>p.acreditacion==="acreditada")?`<button class="btn-icon" onclick="editarPagoCliente(${cobro.id})" title="Editar cobro de cuenta corriente" aria-label="Editar cobro de cuenta corriente"><i class="ti ti-pencil" aria-hidden="true"></i></button>`:"";
+            return `
             <div class="mov-item">
               <div style="display:flex;align-items:center;gap:8px;">
                 <div class="mi-icon ${h.tipo==="cargo"?"mi-cargo":h.tipo==="abono"?"mi-abono":h.tipo==="puntos"?"mi-puntos":"mi-favor"}">
                   <i class="ti ti-${h.tipo==="cargo"?"arrow-up":h.tipo==="abono"?"arrow-down":h.tipo==="puntos"?"star":"refresh"}" style="font-size:12px;"></i>
                 </div>
-                <div><div style="font-size:12px;font-weight:500;">${h.concepto}</div><div style="font-size:10px;color:var(--gc);">${h.fecha}${h.pts>0?" · +"+h.pts+" pts":""}</div></div>
+                <div><div style="font-size:12px;font-weight:500;">${escapeHTML(h.concepto)}</div><div style="font-size:10px;color:var(--gc);">${escapeHTML(h.fecha)}${h.pts>0?" · +"+h.pts+" pts":""}</div></div>
               </div>
               <div style="text-align:right;">
-                ${h.monto>0?`<div style="font-size:12px;font-weight:500;color:${h.tipo==="cargo"?"var(--rj)":"var(--vd)"};">${h.tipo==="cargo"?"+":"−"}${fmt(h.monto)}</div>`:""}
+                ${h.monto>0?`<div style="font-size:12px;font-weight:500;color:${h.tipo==="cargo"?"var(--rj)":"var(--vd)"};">${h.tipo==="cargo"?"+":h.tipo==="venta"?"":"−"}${fmt(h.monto)}</div>`:""}
+                ${acciones?`<div class="row-actions" style="justify-content:flex-end;">${acciones}</div>`:""}
               </div>
-            </div>`).join(""):`<div style="padding:20px;text-align:center;color:var(--gc);font-size:12px;">Sin movimientos registrados</div>`}
+            </div>`;
+          }).join(""):`<div style="padding:20px;text-align:center;color:var(--gc);font-size:12px;">Sin movimientos registrados</div>`}
         </div>
       </div>
     </div>
@@ -2639,7 +2657,9 @@ function renderCajaMovimientos(){
 }
 
 function accionesMovimientoCaja(m){
-  if(m.tipo==="venta"&&m.signo===1&&ventaIdDeMovimiento(m))return botonCorreccionMedio(`abrirCorreccionMedioDesdeCaja(${m.id})`);
+  if(m.tipo==="venta"&&m.signo===1&&ventaIdDeMovimiento(m)){
+    return botonCorreccionMedio(`abrirCorreccionMedioDesdeCaja(${m.id})`)+botonCorreccionImporte(`abrirCorreccionMedioDesdeCaja(${m.id},true)`);
+  }
   if(!movimientoEditable(m))return "";
   return `<button class="btn-icon" onclick="editarMovimiento(${m.id})" title="Editar"><i class="ti ti-pencil" style="font-size:11px;"></i></button><button class="btn-icon" onclick="eliminarMovimiento(${m.id})" title="Eliminar" style="color:var(--rj);"><i class="ti ti-trash" style="font-size:11px;"></i></button>`;
 }
@@ -3082,11 +3102,12 @@ function renderAnalisisVentas(){
   const cajaAcumulada=totalCaja("principal")+totalCaja("reinversion");
   const stockCosto=DB.productos.reduce((a,p)=>a+(Number(p.costo)||0)*stockTotal(p),0);
   const deudasClientes=DB.clientes.reduce((a,c)=>a+(Number(c.deuda)||0),0);
+  const saldosVentas=ventasCobradas.reduce((total,v)=>total+saldoPendienteVenta(v),0);
   const tarjetasPorIngresar=totalTarjetasPendientes();
   const saldosFavor=DB.clientes.reduce((a,c)=>a+(Number(c.saldoFavor)||0),0);
   const deudaProveedores=DB.proveedores.flatMap(p=>p.compras).filter(c=>c.metodo==="cuenta_prov").reduce((a,c)=>a+(Number(c.saldo_pendiente??c.total)||0),0);
   const reintegrosPendientes=totalReintegrosPendientes();
-  const patrimonio=stockCosto+cajaAcumulada+deudasClientes+tarjetasPorIngresar-saldosFavor-deudaProveedores-reintegrosPendientes;
+  const patrimonio=stockCosto+cajaAcumulada+deudasClientes+saldosVentas+tarjetasPorIngresar-saldosFavor-deudaProveedores-reintegrosPendientes;
   const monthKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   const monthLabel=k=>{const [y,m]=k.split("-");return `${m}/${String(y).slice(2)}`;};
   const meses=Array.from({length:6},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-5+i,1);return monthKey(d);});
@@ -3111,6 +3132,7 @@ function renderAnalisisVentas(){
     ["Stock",stockCosto,"var(--az)"],
     ["Caja",cajaAcumulada,"var(--vd)"],
     ["Deudas",deudasClientes,"var(--am)"],
+    ["Saldos de ventas por cobrar",saldosVentas,"var(--am)"],
     ["Tarjetas por ingresar",tarjetasPorIngresar,"var(--pu)"],
     ["Saldos a favor de clientes",-saldosFavor,"var(--rj)"],
     ["Reintegros pendientes",-reintegrosPendientes,"var(--rj)"],
