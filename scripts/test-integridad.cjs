@@ -6,8 +6,8 @@ function pagar(a,monto=20000,metodo='Efectivo'){
   a.element('pago-cli').value='1';a.element('pago-cli-monto').value=monto;a.element('pago-cli-metodo').value=metodo;
   return a.run('procesarPagoCli()');
 }
-function devolver(a,{cantidad=1,monto=19000,cliente=1,venta=1}={}){
-  for(const [id,value] of Object.entries({'dev-venta':venta,'dev-cliente':cliente,'dev-prod':'P1-M','dev-cantidad':cantidad,'dev-monto':monto,'dev-motivo':'Talle'}))a.element(id).value=value;
+function devolver(a,{cantidad=1,monto=19000,cliente=1,venta=1,resolucion='favor',caja='principal',medio='efectivo',fecha=a.run('toDateInput()')}={}){
+  for(const [id,value] of Object.entries({'dev-venta':venta,'dev-cliente':cliente,'dev-prod':'P1-M','dev-cantidad':cantidad,'dev-monto':monto,'dev-motivo':'Talle','dev-resolucion':resolucion,'dev-caja':caja,'dev-medio':medio,'dev-fecha-reintegro':fecha}))a.element(id).value=value;
   return a.run('procesarDevolucion()');
 }
 function productoForm(a){
@@ -76,6 +76,83 @@ test('Una devolución válida restituye cantidad y favor; no puede repetirse',()
   const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);assert.equal(devolver(a),true);
   assert.equal(a.run('DB.productos[0].variantes[0].stock'),3);assert.equal(a.run('DB.clientes[0].saldoFavor'),19000);assert.equal(devolver(a),false);assert.equal(a.run('DB.devoluciones.length'),1);
   assert.equal(a.run('eliminarVentaPorId(1)'),false);a.run('anularDevolucion(1)');assert.equal(a.run('DB.clientes[0].saldoFavor'),0);assert.equal(a.run('DB.productos[0].variantes[0].stock'),2);
+});
+test('El reintegro conserva la venta y su cobro, registra un egreso y se anula con un reingreso separado',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  const venta=a.run('JSON.stringify(DB.ventas[0])');
+  const cobro=a.run('JSON.stringify(DB.movimientos[0])');
+  assert.equal(devolver(a,{resolucion:'reintegro'}),true);
+  assert.equal(a.run('JSON.stringify(DB.ventas[0])'),venta);
+  assert.equal(a.run('JSON.stringify(DB.movimientos[1])'),cobro);
+  assert.equal(a.run('DB.movimientos[0].signo'),-1);
+  assert.equal(a.run('DB.movimientos[0].monto'),19000);
+  assert.equal(a.run('DB.movimientos[0].devolucion_id'),1);
+  assert.equal(a.run('DB.productos[0].variantes[0].stock'),3);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),50000);
+  assert.equal(a.run('DB.clientes[0].saldoFavor'),0);
+  assert.equal(a.run('eliminarMovimiento(DB.devoluciones[0].movimiento_id)'),false);
+  assert.equal(a.run('anularDevolucion(1)'),true);
+  assert.equal(a.run('anularDevolucion(1)'),false);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),69000);
+  assert.equal(a.run('DB.movimientos[0].tipo'),'reversion_reintegro_devolucion');
+  assert.equal(a.run('DB.productos[0].variantes[0].stock'),2);
+});
+for(const resolucion of ['reintegro','favor'])test(`Resolver un reintegro pendiente como ${resolucion} se aplica una sola vez`,()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  assert.equal(devolver(a,{resolucion:'pendiente'}),true);
+  assert.equal(a.run('totalReintegrosPendientes()'),19000);
+  assert.equal(a.run('DB.movimientos.length'),1);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),69000);
+  assert.equal(a.run('DB.clientes[0].saldoFavor'),0);
+  a.element('dev-resolver-id').value=1;
+  a.element('dev-resolucion').value=resolucion;
+  a.element('dev-monto').value=1;
+  assert.equal(a.run('procesarDevolucion()'),true);
+  assert.equal(a.run('procesarDevolucion()'),false);
+  assert.equal(a.run('totalReintegrosPendientes()'),0);
+  assert.equal(a.run('DB.devoluciones[0].monto'),19000);
+  assert.equal(a.run('DB.productos[0].variantes[0].stock'),3);
+  assert.equal(a.run('DB.clientes[0].saldoFavor'),resolucion==='favor'?19000:0);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),resolucion==='reintegro'?50000:69000);
+});
+test('Un reintegro sin saldo disponible o sin cobro original no cambia datos',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  const antes=a.run('JSON.stringify(DB)');
+  assert.equal(devolver(a,{resolucion:'reintegro',caja:'reinversion'}),false);
+  assert.equal(a.run('JSON.stringify(DB)'),antes);
+  const b=app();vender(b,[{tipo:'cuenta',monto:19000}]);
+  const cuenta=b.run('JSON.stringify(DB)');
+  assert.equal(devolver(b,{resolucion:'reintegro'}),false);
+  assert.equal(b.run('JSON.stringify(DB)'),cuenta);
+});
+test('El reintegro registra su propia fecha y rechaza fechas inválidas o anteriores a la venta',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  a.run("DB.ventas[0].fechaISO=DB.movimientos[0].fechaISO='2020-03-01'");
+  const antes=a.run('JSON.stringify(DB)');
+  for(const fecha of ['2020-02-30','2020-02-29','9999-12-31']){
+    assert.equal(devolver(a,{resolucion:'reintegro',fecha}),false);
+    assert.equal(a.run('JSON.stringify(DB)'),antes);
+  }
+  assert.equal(devolver(a,{resolucion:'reintegro',fecha:'2020-03-02'}),true);
+  assert.equal(a.run('DB.movimientos[0].fechaISO'),'2020-03-02');
+  assert.equal(a.run('DB.movimientos[1].fechaISO'),'2020-03-01');
+});
+test('Anular un pendiente cancela la obligación sin generar movimientos de Caja',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  assert.equal(devolver(a,{resolucion:'pendiente'}),true);
+  assert.equal(a.run('anularDevolucion(1)'),true);
+  assert.equal(a.run('totalReintegrosPendientes()'),0);
+  assert.equal(a.run('DB.productos[0].variantes[0].stock'),2);
+  assert.equal(a.run('DB.movimientos.length'),1);
+  assert.equal(a.run('DB.cajas.principal.efectivo'),69000);
+});
+test('Una devolución histórica sin resolución conserva la anulación de saldo a favor',()=>{
+  const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);
+  assert.equal(devolver(a),true);
+  a.run('delete DB.devoluciones[0].resolucion');
+  assert.equal(a.run('anularDevolucion(1)'),true);
+  assert.equal(a.run('DB.clientes[0].saldoFavor'),0);
+  assert.equal(a.run('DB.movimientos.length'),1);
 });
 for(const data of [{cantidad:2},{cantidad:0},{cantidad:1.5},{monto:-1},{monto:20000},{cliente:999},{venta:999}])test(`Devolución inválida ${JSON.stringify(data)} no crea saldo ni stock`,()=>{
   const a=app();vender(a,[{tipo:'efectivo',monto:19000}]);assert.equal(devolver(a,data),false);assert.equal(a.run('DB.devoluciones.length'),0);assert.equal(a.run('DB.productos[0].variantes[0].stock'),2);assert.equal(a.run('DB.clientes[0].saldoFavor'),0);

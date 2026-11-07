@@ -55,7 +55,23 @@ Ejemplo: venta de $19.000 y comisión de $950 → ingreso en caja de $18.050. La
 
 **Venta pendiente de cobro** corresponde a una reserva que el cliente todavía no pagó. Es diferente de una venta confirmada con tarjeta cuyo dinero aún no llegó.
 
-Los pagos históricos sin estado de acreditación conservan su comportamiento anterior y sus saldos; no se descuentan automáticamente de caja. Al editar una venta con una acreditación registrada, se conservan total y método de pago para mantener el ingreso; se pueden editar los demás datos. Eliminar una venta revierte el neto efectivamente ingresado y cancela sus importes pendientes.
+Los pagos históricos sin estado de acreditación conservan su ingreso original. El editor de una venta confirmada conserva el total, los pagos y el estado de cobro. Corregir la fecha o la hora actualiza los ingresos inmediatos de la venta. Las tarjetas acreditadas conservan su propia fecha de ingreso. Eliminar una venta revierte el neto ingresado y cancela sus importes pendientes. La eliminación exige anular primero las devoluciones activas.
+
+## Devoluciones y reintegros
+
+En **Ventas → Devoluciones**, elegí la venta, la prenda devuelta, la cantidad y el importe. La devolución repone stock y conserva la venta y su cobro original.
+
+- **Dinero reintegrado** registra un egreso por separado en la caja, el medio y la fecha en que devolviste el dinero. Requiere saldo suficiente en el medio elegido.
+- **Saldo a favor** acredita el importe al cliente identificado y conserva el saldo de Caja.
+- **Pendiente de reintegro** registra el importe por devolver. Usá **Resolver** en el listado para registrar el reintegro o convertirlo en saldo a favor. La resolución conserva el stock ya repuesto.
+
+Los reintegros registrados o pendientes se limitan a lo cobrado mediante los pagos de la venta. Los cargos en cuenta corriente admiten saldo a favor. Para anular un reintegro ya registrado, confirmá que el dinero se recuperó o nunca salió. La anulación registra un reingreso separado en Caja.
+
+## Corregir el medio de pago de una venta
+
+Usá **Corregir medio de pago** en el Historial de ventas, en **Caja → Movimientos** o en **Caja → Ingresos de tarjetas**. Elegí el pago puntual y su medio correcto. La corrección conserva su importe, el total de la venta, el stock y los demás pagos. Cada cambio queda registrado en el historial interno de la venta.
+
+Al corregir un cobro inmediato a tarjeta, queda pendiente de acreditación. En una tarjeta ya acreditada se puede corregir débito o crédito conservando el depósito, el neto y la comisión. El formulario trabaja con pagos de la venta en efectivo, transferencia, Mercado Pago o tarjeta. La cuenta corriente tiene su propio flujo.
 
 ## Cobros de cuenta corriente
 
@@ -71,7 +87,7 @@ Con Node.js disponible, sin instalar dependencias:
 node --test scripts/test-acreditaciones.cjs scripts/test-integridad.cjs scripts/test-persistencia.cjs scripts/test-busquedas.cjs scripts/test-listados.cjs
 ```
 
-Las 91 pruebas cubren acreditaciones, stock concurrente entre carritos, importes, devoluciones, cuentas, edición/anulación, referencias, búsquedas por nombre/teléfono/código, paginación, conservación de cantidades/costos al filtrar ingresos y guardado con errores/conflictos. Usan datos aislados y no conectan a Supabase.
+Las pruebas cubren acreditaciones, stock concurrente entre carritos, importes, devoluciones, reintegros, cuentas, edición/anulación, referencias, búsquedas, paginación y guardado con errores o conflictos. Usan datos aislados y no conectan a Supabase.
 
 La prueba SQL requiere PostgreSQL 16 en una base desechable llamada `lunamia_qa`, sin tablas de la app ni roles `anon`/`authenticated` previos, ejecutada como administrador local:
 

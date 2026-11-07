@@ -54,7 +54,7 @@ function normalizarBase(data){
       row.id=Number(row.id);
       if(!Number.isSafeInteger(row.id)||row.id<=0||ids.has(row.id))throw new Error(`Hay identificadores inválidos o repetidos en ${key}.`);
       ids.add(row.id);
-      for(const field of ["cliente_id","producto_id","proveedor_id","provId","venta_id","pago_cliente_id","transferencia_id","gasto_id","movimiento_id"]){
+      for(const field of ["cliente_id","producto_id","proveedor_id","provId","venta_id","pago_cliente_id","transferencia_id","gasto_id","movimiento_id","devolucion_id"]){
         if(row[field]!=null&&Number.isSafeInteger(Number(row[field]))&&Number(row[field])>0)row[field]=Number(row[field]);
       }
       if(row.monto!=null){row.monto=Number(row.monto);if(!Number.isFinite(row.monto))throw new Error(`Importe inválido en ${key}.`);}

@@ -1576,9 +1576,13 @@ function clienteDeVenta(venta){
   return null;
 }
 
+function ventaIdDeMovimiento(m){
+  if(m.venta_id!=null)return m.venta_id;
+  if(m.tipo!=="venta")return null;
+  return Number(String(m.concepto||"").match(/\bVenta #(\d+)\b/)?.[1])||null;
+}
 function movimientosDeVenta(venta){
-  const id=venta?.id;
-  return DB.movimientos.filter(m=>m.venta_id===id || (id && m.tipo==="venta" && String(m.concepto||"").includes(`Venta #${id}`)));
+  return venta?.id?DB.movimientos.filter(m=>ventaIdDeMovimiento(m)===venta.id):[];
 }
 
 function transferenciaDeMovimiento(mov){
@@ -1697,7 +1701,7 @@ function revertirEfectosVenta(venta, opts={}){
   }
   }
 
-  const cl=clienteDeVenta(venta);
+  const cl=opts.sinCliente?null:clienteDeVenta(venta);
   if(cl&&!ventaPendiente(venta)){
     ensureClienteShape(cl);
     normalizarPagosVenta(venta).forEach(p=>{
@@ -1735,7 +1739,7 @@ function aplicarEfectosVenta(venta,opts={}){
   });
   if(ventaPendiente(venta))return;
 
-  const cl=clienteDeVenta(venta);
+  const cl=opts.sinCliente?null:clienteDeVenta(venta);
   if(cl)ensureClienteShape(cl);
   normalizarPagosVenta(venta).forEach((p,indice)=>{
     const monto=Number(p.monto)||0;
@@ -2078,45 +2082,81 @@ function procesarVenta(){
 function renderDevoluciones(){
   document.getElementById("main-area").innerHTML=`
   <div style="display:flex;flex-direction:column;flex:1;">
-    <div class="ph"><div><div class="pt">Devoluciones</div><div class="ps">Generan saldo a favor · no devolución de dinero</div></div>
+    <div class="ph"><div><div class="pt">Devoluciones</div><div class="ps">Reintegros pendientes: ${fmt(totalReintegrosPendientes())}</div></div>
       <button class="btn btn-ng btn-sm" onclick="abrirDevolucion()"><i class="ti ti-plus"></i>Registrar devolución</button></div>
     <div style="padding:14px 18px;flex:1;overflow-y:auto;">
       <div class="tw"><table>
-        <colgroup><col style="width:50px"><col style="width:70px"><col style="width:130px"><col><col style="width:100px"><col style="width:90px"><col style="width:50px"></colgroup>
-        <thead><tr><th>#</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Motivo</th><th>Saldo favor</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Venta</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Motivo</th><th>Importe</th><th>Resolución</th><th>Acciones</th></tr></thead>
         <tbody>${DB.devoluciones.map(d=>`<tr data-date="${d.fechaISO||""}" data-search="Venta #${d.venta_id||""}" style="${d.anulada?"opacity:.55;":""}">
           <td style="color:var(--gc);font-size:10px;">#${d.id}</td>
+          <td>${d.venta_id?`#${d.venta_id}`:"—"}</td>
           <td style="color:var(--gt);">${d.fecha}</td>
-          <td style="font-size:12px;">${d.cliente}</td>
-          <td style="font-size:11px;color:var(--gt);">${d.producto} × ${d.cantidad||1}</td>
-          <td><span class="bd bd-az" style="font-size:10px;">${d.motivo}</span></td>
-          <td style="font-weight:500;color:var(--vd);">${fmt(d.monto)}</td>
-          <td>${d.anulada?"Anulada":`<button class="btn-icon" onclick="anularDevolucion(${d.id})" title="Anular devolución"><i class="ti ti-trash"></i></button>`}</td>
+          <td style="font-size:12px;">${escapeHTML(d.cliente||"Consumidor final")}</td>
+          <td style="font-size:11px;color:var(--gt);">${escapeHTML(d.producto)} × ${d.cantidad||1}</td>
+          <td><span class="bd bd-az" style="font-size:10px;">${escapeHTML(d.motivo||"—")}</span></td>
+          <td style="font-weight:500;">${fmt(d.monto)}</td>
+          <td>${etiquetaResolucionDevolucion(d)}</td>
+          <td>${d.anulada?"—":`<div class="row-actions">${resolucionDevolucion(d)==="pendiente"?`<button class="btn btn-out btn-sm" onclick="abrirDevolucion(${d.id})">Resolver</button>`:""}<button class="btn-icon" onclick="anularDevolucion(${d.id})" title="Anular devolución"><i class="ti ti-trash"></i></button></div>`}</td>
         </tr>`).join("")}</tbody>
       </table></div>
     </div>
   </div>`;
 }
-function abrirDevolucion(){
+function etiquetaResolucionDevolucion(d){
+  if(d.anulada)return `<span class="bd bd-rj">Anulada</span>`;
+  if(resolucionDevolucion(d)==="pendiente")return `<span class="bd bd-am">Reintegro pendiente</span>`;
+  if(resolucionDevolucion(d)==="favor")return `<span class="bd bd-ok">Saldo a favor</span>`;
+  const m=DB.movimientos.find(m=>m.id===d.movimiento_id);
+  return `<span class="bd bd-ok">Dinero reintegrado</span>${m?`<div class="sc-sub">${escapeHTML(m.fechaISO)} · ${cajaLabel(m.caja)} · ${medioLabel(m.medio)}</div>`:""}`;
+}
+function abrirDevolucion(idPendiente=null){
+  const pendiente=idPendiente?DB.devoluciones.find(d=>d.id===idPendiente&&!d.anulada&&resolucionDevolucion(d)==="pendiente"):null;
+  if(idPendiente&&!pendiente)return;
   const ds=document.getElementById("dev-cliente");
-  ds.innerHTML=`<option value="">Seleccionar cliente para el saldo a favor...</option>`+DB.clientes.map(c=>`<option value="${c.id}">${escapeHTML(c.nombre)}</option>`).join("");
+  ds.innerHTML=`<option value="">Consumidor final</option>`+DB.clientes.map(c=>`<option value="${c.id}">${escapeHTML(c.nombre)}</option>`).join("");
+  ds.value=pendiente?.cliente_id||"";
+  ds.disabled=Boolean(pendiente?.cliente_id);
+  document.getElementById("dev-titulo").textContent=pendiente?`Resolver devolución #${pendiente.id}`:"Registrar devolución";
+  document.getElementById("dev-resolver-id").value=pendiente?.id||"";
+  document.getElementById("dev-detalle").hidden=Boolean(pendiente);
   document.getElementById("dev-venta").value="";
   document.getElementById("dev-cantidad").value="1";
-  document.getElementById("dev-monto").value="";
+  document.getElementById("dev-monto").value=pendiente?.monto??"";
+  document.getElementById("dev-monto").readOnly=Boolean(pendiente);
+  const resolucion=document.getElementById("dev-resolucion");
+  resolucion.value="";
+  resolucion.querySelector('option[value="pendiente"]').disabled=Boolean(pendiente);
+  document.getElementById("dev-caja").value="principal";
+  document.getElementById("dev-medio").value="";
+  document.getElementById("dev-fecha-reintegro").value=toDateInput();
+  document.getElementById("dev-fecha-reintegro").max=toDateInput();
   document.getElementById("dev-prod").innerHTML=`<option value="">Ingresá primero la venta original</option>`;
   document.getElementById("dev-ventas").innerHTML=DB.ventas.filter(v=>!v.eliminada&&!ventaPendiente(v)).map(v=>`<option value="${v.id}">${escapeHTML(v.cliente)} · ${fmt(v.total)}</option>`).join("");
-  document.getElementById("dev-info").textContent="Elegí una venta confirmada. El saldo a favor se asigna a un cliente identificado.";
+  document.getElementById("dev-info").textContent=pendiente?`Venta #${pendiente.venta_id} · ${fmt(pendiente.monto)} pendientes. La prenda ya volvió al stock.`:"Elegí una venta confirmada. El cobro original se conserva. Para dejar saldo a favor, identificá al cliente.";
+  actualizarCamposReintegro();
   openOv("ov-dev");
+  actualizarBusquedaClienteDevolucion();
+}
+function actualizarCamposReintegro(){
+  document.getElementById("dev-reintegro").style.display=document.getElementById("dev-resolucion").value==="reintegro"?"":"none";
+}
+function actualizarBusquedaClienteDevolucion(){
+  if(typeof limpiarBusquedaSelector==="function")limpiarBusquedaSelector("dev-cliente");
+  const busqueda=document.getElementById("dev-cliente-busqueda");
+  if(busqueda)busqueda.disabled=document.getElementById("dev-cliente").disabled;
 }
 function onDevVentaChange(){
   const id=Number(document.getElementById("dev-venta").value);
   const venta=DB.ventas.find(v=>v.id===id&&!v.eliminada&&!ventaPendiente(v));
   const prod=document.getElementById("dev-prod");
+  const cliente=document.getElementById("dev-cliente");
+  cliente.value=venta?.cliente_id||"";
+  cliente.disabled=Boolean(venta?.cliente_id);
+  actualizarBusquedaClienteDevolucion();
   if(!venta){prod.innerHTML=`<option value="">Venta no encontrada o todavía sin cobrar</option>`;document.getElementById("dev-info").textContent="Revisá el número de una venta confirmada.";document.getElementById("dev-monto").value="";return;}
   const codigos=[...new Set(normalizarItemsVenta(venta).map(it=>it.cod))];
   prod.innerHTML=codigos.filter(cod=>disponibleDevolucion(venta,cod)>0).map(cod=>{const it=normalizarItemsVenta(venta).find(it=>it.cod===cod);return `<option value="${escapeHTML(cod)}">${escapeHTML(it.nombre)} · ${escapeHTML(varianteLabel(it))} · ${disponibleDevolucion(venta,cod)} disponibles</option>`;}).join("")||`<option value="">Todos los productos de esta venta ya fueron devueltos</option>`;
-  if(venta.cliente_id)document.getElementById("dev-cliente").value=venta.cliente_id;
-  document.getElementById("dev-info").textContent=`Venta #${venta.id} · ${venta.cliente}. ${venta.cliente_id?"El saldo corresponde al cliente de la venta.":"Seleccioná un cliente para asignar el saldo a favor."}`;
+  document.getElementById("dev-info").textContent=`Venta #${venta.id} · ${venta.cliente}. El cobro original se conserva.`;
   document.getElementById("dev-cantidad").value="1";recalcDevolucion();
 }
 function recalcDevolucion(){
@@ -2129,22 +2169,33 @@ function recalcDevolucion(){
 }
 function procesarDevolucion(){
   if(!puedeModificarDB())return false;
-  const venta=DB.ventas.find(v=>v.id===Number(document.getElementById("dev-venta").value)&&!v.eliminada&&!ventaPendiente(v));
+  const idPendiente=Number(document.getElementById("dev-resolver-id").value);
+  const resolucion=document.getElementById("dev-resolucion").value;
+  const pendiente=idPendiente?DB.devoluciones.find(d=>d.id===idPendiente&&!d.anulada&&resolucionDevolucion(d)==="pendiente"):null;
+  if(idPendiente&&(!pendiente||resolucion==="pendiente")){alert("Elegí cómo resolver una devolución que todavía esté pendiente.");return false;}
+  const ventaId=pendiente?.venta_id||Number(document.getElementById("dev-venta").value);
+  const venta=DB.ventas.find(v=>v.id===ventaId&&!v.eliminada&&!ventaPendiente(v));
   const cl=DB.clientes.find(c=>c.id===Number(document.getElementById("dev-cliente").value));
+  if(!venta){alert("Seleccioná una venta confirmada.");return false;}
+  const clienteId=pendiente?.cliente_id||venta.cliente_id;
+  if(clienteId&&clienteId!==cl?.id){alert("La devolución corresponde al cliente de la venta.");return false;}
+  const reintegro={caja:document.getElementById("dev-caja").value,medio:document.getElementById("dev-medio").value,fechaISO:document.getElementById("dev-fecha-reintegro").value};
+  if(pendiente){
+    if(!aplicarResolucionDevolucion(pendiente,venta,cl,resolucion,reintegro))return false;
+    persistDBSoon();closeOv("ov-dev");renderDevoluciones();renderSidebar();return true;
+  }
   const cod=document.getElementById("dev-prod").value;
-  const cantidad=Number(document.getElementById("dev-cantidad").value),monto=Number(document.getElementById("dev-monto").value);
-  if(!venta||!cl){alert("Seleccioná una venta confirmada y un cliente para el saldo a favor.");return false;}
-  if(venta.cliente_id&&venta.cliente_id!==cl.id){alert("El saldo a favor debe asignarse al cliente de la venta.");return false;}
+  const cantidad=Number(document.getElementById("dev-cantidad").value);
+  const montoTexto=document.getElementById("dev-monto").value;
+  const monto=Number(montoTexto);
   const p=DB.productos.find(p=>p.variantes.some(v=>v.cod===cod)),v=p?.variantes.find(v=>v.cod===cod);
   const item=normalizarItemsVenta(venta).find(it=>it.cod===cod);
-  const totalDevuelto=DB.devoluciones.filter(d=>d.venta_id===venta.id&&!d.anulada).reduce((a,d)=>a+d.monto,0);
   if(!item||!v||!cantidadValida(cantidad)||cantidad>disponibleDevolucion(venta,cod)){alert("La cantidad excede lo vendido o ya devuelto. Revisá producto y cantidad.");return false;}
-  if(!importeValido(monto,true)||monto>montoMaximoDevolucion(venta,cod,cantidad)+0.005||totalDevuelto+monto>venta.total+0.005){alert("El saldo a favor no puede ser negativo ni superar el importe original de las prendas devueltas.");return false;}
-  const id=nextId(DB.devoluciones);
-  ensureClienteShape(cl);cl.saldoFavor+=monto;
-  cl.historial.unshift({fecha:todayShort(),fechaISO:toDateInput(),concepto:`Devolución venta #${venta.id} — saldo a favor`,monto,tipo:"favor",pts:0,devolucion_id:id});
+  if(montoTexto===""||!importeValido(monto,true)||monto>montoMaximoDevolucion(venta,cod,cantidad)){alert("El importe de la devolución debe estar entre cero y lo que se pagó por las prendas devueltas.");return false;}
+  const devolucion={fecha:todayShort(),fechaISO:toDateInput(),venta_id:venta.id,producto_id:p.id,producto:cod,cantidad,costo_unitario:Number(item.costo_unitario??p.costo)||0,motivo:cleanPlainText(document.getElementById("dev-motivo").value),monto};
+  if(!aplicarResolucionDevolucion(devolucion,venta,cl,resolucion,reintegro))return false;
   v.stock+=cantidad;
-  DB.devoluciones.unshift({id,fecha:todayShort(),fechaISO:toDateInput(),venta_id:venta.id,cliente_id:cl.id,cliente:cl.nombre,producto_id:p.id,producto:cod,cantidad,costo_unitario:Number(item.costo_unitario??p.costo)||0,motivo:cleanPlainText(document.getElementById("dev-motivo").value),monto});
+  DB.devoluciones.unshift(devolucion);
   persistDBSoon();closeOv("ov-dev");renderDevoluciones();renderSidebar();return true;
 }
 
@@ -2175,7 +2226,7 @@ function renderHistorialVentas(){
     </div>
     <div style="padding:0 18px 18px;flex:1;overflow-y:auto;">
       <div class="tw"><table>
-        <colgroup><col style="width:50px"><col style="width:70px"><col style="width:55px"><col style="width:120px"><col><col style="width:90px"><col style="width:90px"><col style="width:190px"><col style="width:56px"></colgroup>
+        <colgroup><col style="width:50px"><col style="width:70px"><col style="width:55px"><col style="width:120px"><col><col style="width:90px"><col style="width:90px"><col style="width:190px"><col style="width:90px"></colgroup>
         <thead><tr>${sortTh("#","ventas","id","renderHistorialVentas")}${sortTh("Fecha","ventas","fecha","renderHistorialVentas")}${sortTh("Hora","ventas","hora","renderHistorialVentas")}${sortTh("Cliente","ventas","cliente","renderHistorialVentas")}${sortTh("Productos","ventas","productos","renderHistorialVentas")}${sortTh("Método","ventas","metodo","renderHistorialVentas")}${sortTh("Total","ventas","total","renderHistorialVentas")}<th>Ingreso del dinero</th><th></th></tr></thead>
         <tbody>${ventasActivas.map(v=>`<tr data-date="${fechaISOFromVenta(v)}" data-search="#${v.id}">
           <td style="color:var(--gc);font-size:10px;">#${v.id}</td>
@@ -2186,7 +2237,7 @@ function renderHistorialVentas(){
           <td><span class="bd ${ventaPendiente(v)?"bd-bj":v.metodo==="Efectivo"?"bd-ok":v.metodo==="Cuenta cte."?"bd-bj":"bd-az"}" style="font-size:10px;">${ventaPendiente(v)?"Pendiente":v.metodo}</span></td>
           <td style="font-weight:500;">${fmt(v.total)}</td>
           <td style="white-space:normal;">${estadoIngresoVentaHTML(v)||"—"}</td>
-          <td><button class="btn-icon" onclick="editarVenta(${v.id}, true)" title="${ventaPendiente(v)?"Editar / cobrar":"Editar"}"><i class="ti ${ventaPendiente(v)?"ti-cash":"ti-pencil"}" style="font-size:11px;"></i></button></td>
+          <td><div class="row-actions"><button class="btn-icon" onclick="editarVenta(${v.id}, true)" title="${ventaPendiente(v)?"Editar / cobrar":"Editar"}"><i class="ti ${ventaPendiente(v)?"ti-cash":"ti-pencil"}" style="font-size:11px;"></i></button>${normalizarPagosVenta(v).some(p=>mediosParaCorregirPago(p).length)?botonCorreccionMedio(`abrirCorreccionMedio(${v.id})`):""}</div></td>
         </tr>`).join("")||`<tr><td colspan="9" style="text-align:center;color:var(--gc);padding:20px;">${ventasSoloIngresoPendiente?"Sin ingresos de tarjeta pendientes":"Sin ventas registradas"}</td></tr>`}</tbody>
       </table></div>
     </div>
@@ -2500,6 +2551,7 @@ function renderCajaResumen(){
   const totP=totalCaja("principal");const totR=totalCaja("reinversion");
   const vHoy=DB.movimientos.filter(m=>isTodayRecord(m)&&["venta","reversion_venta"].includes(m.tipo)).reduce((a,m)=>a+m.monto*m.signo,0);
   const gHoy=DB.movimientos.filter(m=>isTodayRecord(m)&&m.tipo==="gasto").reduce((a,m)=>a+m.monto,0);
+  const rHoy=-DB.movimientos.filter(m=>isTodayRecord(m)&&esMovimientoReintegro(m)).reduce((a,m)=>a+m.monto*m.signo,0);
   const cHoy=DB.movimientos.filter(m=>isTodayRecord(m)&&["pago_cliente","reversion_pago_cliente"].includes(m.tipo)).reduce((a,m)=>a+m.monto*m.signo,0);
   const movHoy=DB.movimientos.filter(m=>isTodayRecord(m)).slice(0,5);
   const medios=[{k:"efectivo",label:"Efectivo",cls:"tm-ef"},{k:"mercadopago",label:"Mercado Pago",cls:"tm-mp"},{k:"debito",label:"Débito",cls:"tm-db"},{k:"credito",label:"Crédito",cls:"tm-cr"}];
@@ -2525,11 +2577,12 @@ function renderCajaResumen(){
           <button class="btn-ghost btn-sm" onclick="abrirTransfCajas()" style="margin-top:10px;width:100%;justify-content:center;font-size:11px;"><i class="ti ti-arrows-exchange"></i>Mover fondos</button>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px;">
         <div class="sc"><div class="sl">Ventas hoy</div><div class="sv" style="color:var(--vd);">+${fmt(vHoy)}</div></div>
         <div class="sc"><div class="sl">Cobros clientes</div><div class="sv" style="color:var(--te);">+${fmt(cHoy)}</div></div>
         <div class="sc"><div class="sl">Gastos hoy</div><div class="sv" style="color:var(--rj);">−${fmt(gHoy)}</div></div>
-        <div class="sc" style="background:var(--ng);"><div class="sl" style="color:var(--gc);">Balance neto</div><div class="sv" style="color:${vHoy+cHoy-gHoy>=0?"var(--vd)":"var(--rj)"};">${fmt(vHoy+cHoy-gHoy)}</div></div>
+        <div class="sc"><div class="sl">Reintegros netos</div><div class="sv">${fmt(-rHoy)}</div></div>
+        <div class="sc" style="background:var(--ng);"><div class="sl" style="color:var(--gc);">Balance neto</div><div class="sv" style="color:${vHoy+cHoy-gHoy-rHoy>=0?"var(--vd)":"var(--rj)"};">${fmt(vHoy+cHoy-gHoy-rHoy)}</div></div>
       </div>
       ${totalTarjetasPendientes()>0?`<div class="notif notif-az" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;"><span>Ingreso de tarjetas pendiente: <strong>${fmt(totalTarjetasPendientes())}</strong></span><button class="btn btn-out btn-sm" onclick="verVentasConIngresoPendiente()">Ver ventas pendientes</button></div>`:""}
       <div class="sect-title">Movimientos de hoy</div>
@@ -2575,7 +2628,7 @@ function renderCajaMovimientos(){
                 <span>${fmtDate(day)} · ${items.length} mov.</span><span style="color:${db>=0?"var(--vd)":"var(--rj)"};">${db>=0?"+":"−"}${fmt(Math.abs(db))}</span>
               </summary>
               <div style="padding:0 12px 8px;">
-                ${items.map(m=>`<div class="mov-item" data-date="${m.fechaISO||""}"><div style="display:flex;align-items:center;gap:8px;"><div class="mi-icon ${m.signo>0?"mi-abono":"mi-cargo"}"><i class="ti ti-${m.signo>0?"arrow-down":"arrow-up"}" style="font-size:12px;"></i></div><div><div style="font-size:12px;font-weight:500;">${m.concepto}</div><div style="font-size:10px;color:var(--gc);">${m.hora||"—"} · ${descripcionMedioMovimiento(m)}${m.editado_en?' · <span style="color:var(--am);">editado</span>':""}</div></div></div><div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:${m.signo>0?"var(--vd)":"var(--rj)"};">${m.signo>0?"+":"−"}${fmt(m.monto)}</div>${movimientoEditable(m)?`<button class="btn-icon" onclick="editarMovimiento(${m.id})" title="Editar"><i class="ti ti-pencil" style="font-size:11px;"></i></button><button class="btn-icon" onclick="eliminarMovimiento(${m.id})" title="Eliminar" style="color:var(--rj);"><i class="ti ti-trash" style="font-size:11px;"></i></button>`:""}</div></div>`).join("")}
+                ${items.map(m=>`<div class="mov-item" data-date="${m.fechaISO||""}"><div style="display:flex;align-items:center;gap:8px;"><div class="mi-icon ${m.signo>0?"mi-abono":"mi-cargo"}"><i class="ti ti-${m.signo>0?"arrow-down":"arrow-up"}" style="font-size:12px;"></i></div><div><div style="font-size:12px;font-weight:500;">${m.concepto}</div><div style="font-size:10px;color:var(--gc);">${m.hora||"—"} · ${descripcionMedioMovimiento(m)}${m.editado_en?' · <span style="color:var(--am);">editado</span>':""}</div></div></div><div style="display:flex;align-items:center;gap:6px;"><div style="font-size:13px;font-weight:500;color:${m.signo>0?"var(--vd)":"var(--rj)"};">${m.signo>0?"+":"−"}${fmt(m.monto)}</div>${accionesMovimientoCaja(m)}</div></div>`).join("")}
               </div>
             </details>`;}).join("")}
           </div>
@@ -2583,6 +2636,12 @@ function renderCajaMovimientos(){
       }).join(""):`<div style="padding:40px;text-align:center;color:var(--gc);">Sin movimientos registrados</div>`}
     </div>
   </div>`;
+}
+
+function accionesMovimientoCaja(m){
+  if(m.tipo==="venta"&&m.signo===1&&ventaIdDeMovimiento(m))return botonCorreccionMedio(`abrirCorreccionMedioDesdeCaja(${m.id})`);
+  if(!movimientoEditable(m))return "";
+  return `<button class="btn-icon" onclick="editarMovimiento(${m.id})" title="Editar"><i class="ti ti-pencil" style="font-size:11px;"></i></button><button class="btn-icon" onclick="eliminarMovimiento(${m.id})" title="Eliminar" style="color:var(--rj);"><i class="ti ti-trash" style="font-size:11px;"></i></button>`;
 }
 
 function renderCajaGastos(){
@@ -2665,6 +2724,7 @@ function renderCajaCierre(){
   const transfHoy=(DB.transferencias||[]).filter(isTodayRecord);
   const sumMov=(tipo,medio)=>movHoy.filter(m=>m.caja==="principal"&&[tipo,`reversion_${tipo}`].includes(m.tipo)&&(!medio||m.medio===medio)).reduce((a,m)=>a+(Number(m.monto)||0)*(m.signo||1),0);
   const sumGasto=medio=>-sumMov("gasto",medio);
+  const sumReintegro=medio=>movHoy.filter(m=>m.caja==="principal"&&esMovimientoReintegro(m)&&(!medio||m.medio===medio)).reduce((a,m)=>a+m.monto*m.signo,0);
   const sumTransf=medio=>transfHoy.reduce((a,t)=>{
     const m=Number(t.monto)||0;
     if(t.origen==="principal"&&(!medio||cajaMedio(t.medio||"efectivo")===medio))a-=m;
@@ -2683,8 +2743,8 @@ function renderCajaCierre(){
   const gMP=sumGasto("mercadopago");
   const trEf=sumTransf("efectivo");
   const trMP=sumTransf("mercadopago");
-  const efNetoDia=vEf+cEf-gEf+trEf;
-  const mpNetoDia=vMP+cMP-gMP+trMP;
+  const efNetoDia=vEf+cEf-gEf+trEf+sumReintegro("efectivo");
+  const mpNetoDia=vMP+cMP-gMP+trMP+sumReintegro("mercadopago");
   const efEsp=DB.cajas.principal.efectivo||0;
   const mpEsp=DB.cajas.principal.mercadopago||0;
   document.getElementById("main-area").innerHTML=`
@@ -2700,7 +2760,8 @@ function renderCajaCierre(){
             <div class="cierre-row" style="font-size:12px;"><span style="color:var(--gt);">Cobros clientes</span><span style="font-weight:500;color:var(--te);">+${fmt(cTot)}</span></div>
             <div class="cierre-row" style="font-size:12px;"><span style="color:var(--gt);">Gastos registrados</span><span style="font-weight:500;color:var(--rj);">−${fmt(gTot)}</span></div>
             <div class="cierre-row" style="font-size:12px;"><span style="color:var(--gt);">Transferencias internas</span><span style="color:var(--gc);">${fmt(trTot)}</span></div>
-            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:500;padding-top:9px;margin-top:4px;border-top:0.5px solid var(--crb);"><span>Balance neto</span><span style="color:var(--vd);">${fmt(vTot+cTot-gTot)}</span></div>
+            <div class="cierre-row"><span style="color:var(--gt);">Reintegros netos</span><span>${fmt(sumReintegro())}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:500;padding-top:9px;margin-top:4px;border-top:0.5px solid var(--crb);"><span>Balance neto</span><span style="color:var(--vd);">${fmt(vTot+cTot-gTot+sumReintegro())}</span></div>
           </div>
           <div class="sect-title">Por medio de pago</div>
           <div style="background:var(--bl);border:0.5px solid var(--crb);border-radius:9px;padding:10px 14px;">
@@ -3024,7 +3085,8 @@ function renderAnalisisVentas(){
   const tarjetasPorIngresar=totalTarjetasPendientes();
   const saldosFavor=DB.clientes.reduce((a,c)=>a+(Number(c.saldoFavor)||0),0);
   const deudaProveedores=DB.proveedores.flatMap(p=>p.compras).filter(c=>c.metodo==="cuenta_prov").reduce((a,c)=>a+(Number(c.saldo_pendiente??c.total)||0),0);
-  const patrimonio=stockCosto+cajaAcumulada+deudasClientes+tarjetasPorIngresar-saldosFavor-deudaProveedores;
+  const reintegrosPendientes=totalReintegrosPendientes();
+  const patrimonio=stockCosto+cajaAcumulada+deudasClientes+tarjetasPorIngresar-saldosFavor-deudaProveedores-reintegrosPendientes;
   const monthKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   const monthLabel=k=>{const [y,m]=k.split("-");return `${m}/${String(y).slice(2)}`;};
   const meses=Array.from({length:6},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-5+i,1);return monthKey(d);});
@@ -3051,6 +3113,7 @@ function renderAnalisisVentas(){
     ["Deudas",deudasClientes,"var(--am)"],
     ["Tarjetas por ingresar",tarjetasPorIngresar,"var(--pu)"],
     ["Saldos a favor de clientes",-saldosFavor,"var(--rj)"],
+    ["Reintegros pendientes",-reintegrosPendientes,"var(--rj)"],
     ["Deuda con proveedores",-deudaProveedores,"var(--rj)"],
   ];
   const maxPat=Math.max(1,...patrimonioData.map(x=>Math.abs(x[1])));

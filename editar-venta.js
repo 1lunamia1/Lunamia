@@ -80,9 +80,9 @@ function abrirFormularioEditarVenta(venta) {
   const info = document.getElementById("ev-linea-info");
   if (info) {
     info.style.display = "block";
-    info.innerHTML = normalizarPagosVenta(venta).some(p=>esPagoTarjeta(p)&&p.acreditacion==="acreditada")
-      ? `<i class="ti ti-info-circle"></i> Esta venta tiene dinero de tarjeta ingresado. Conservá el total y el método de pago; podés editar productos, cliente, fecha y observaciones.`
-      : `<i class="ti ti-info-circle"></i> Podés modificar productos, variantes, cantidades y precios. Al guardar se recalculan stock, caja y cuenta corriente. Los cobros con tarjeta quedan pendientes hasta registrar su ingreso.`;
+    info.innerHTML = ventaPendiente(venta)
+      ? `<i class="ti ti-info-circle"></i> Podés modificar los productos reservados y confirmar el cobro.`
+      : `<i class="ti ti-info-circle"></i> El cobro confirmado se conserva. Para retirar una prenda o registrar un reintegro, usá Ventas → Devoluciones.`;
   }
 
   mostrarInfoAuditoria(venta);
@@ -139,7 +139,7 @@ function crearModalEditarVenta() {
                 <option value="debito">Débito</option>
                 <option value="credito">Crédito</option>
                 <option value="cuenta">Cuenta corriente</option>
-                <option value="mixto">Mixto (mantener proporción)</option>
+                <option value="mixto" disabled>Mixto</option>
               </select>
             </div>
           </div>
@@ -341,7 +341,6 @@ function eliminarItemEditVenta(i) {
 }
 
 function itemsEdicionValidos() {
-  syncTodosItemsDesdeDOM();
   if(editVentaItemsTmp.some(it=>!cantidadValida(it.cantidad)||!importeValido(it.precio,true)||!Number.isFinite(it.descuentoItemPct)||it.descuentoItemPct<0||it.descuentoItemPct>100)){
     alert("Revisá cantidades enteras, precios y descuentos entre 0 y 100%.");return null;
   }
@@ -498,9 +497,11 @@ function onEditClienteChange() {
 
 function onEditPendienteChange() {
   const pending = Boolean(document.getElementById("ev-pendiente")?.checked);
+  const confirmada = ventaOriginal && !ventaPendiente(ventaOriginal);
+  document.getElementById("ev-pendiente").disabled=Boolean(confirmada);
   const metodo = document.getElementById("ev-metodo-pago");
   if (metodo) {
-    metodo.disabled = pending;
+    metodo.disabled = pending || Boolean(confirmada);
     if (pending) metodo.value = "efectivo";
   }
   recalcularTotalEdicion();
@@ -508,25 +509,20 @@ function onEditPendienteChange() {
 
 function pagosEditados(totalFinal, metodo, clienteId) {
   const pendiente=Boolean(document.getElementById("ev-pendiente")?.checked);
-  const originales=normalizarPagosVenta(ventaOriginal,ventaOriginal.total);
-  const mismosPagos=!pendiente&&metodo===metodoParaEditor(ventaOriginal)&&Math.abs(totalFinal-ventaOriginal.total)<0.005;
-  if(!pendiente&&!clienteId&&originales.some(p=>p.tipo==="cuenta")&&metodo==="mixto"){alert("Seleccioná un cliente para la parte en cuenta corriente.");return null;}
-  if(mismosPagos)return cloneData(originales);
-  if(originales.some(p=>esPagoTarjeta(p)&&p.acreditacion==="acreditada")){
-    alert("Esta venta tiene ingresos de tarjeta registrados. Conservá el total y el método de pago para mantener la acreditación; podés editar los demás datos.");
-    return null;
+  if(!ventaPendiente(ventaOriginal)){
+    const originales=normalizarPagosVenta(ventaOriginal);
+    if(pendiente||metodo!==metodoParaEditor(ventaOriginal)||Math.abs(totalFinal-ventaOriginal.total)>=0.005){
+      alert("El cobro de una venta confirmada se conserva. Para retirar una prenda o registrar un reintegro, usá Ventas → Devoluciones.");
+      return null;
+    }
+    if(originales.some(p=>p.tipo==="cuenta")&&clienteId!==(Number(clienteIdDeVenta(ventaOriginal))||null)){
+      alert("Esta venta tiene una parte en cuenta corriente. Conservá el cliente para mantener el cargo original.");return null;
+    }
+    return cloneData(originales);
   }
   if (pendiente) return [];
-  if (metodo === "mixto") {
-    const base = ventaOriginal.total || totalFinal || 1;
-    let restante=totalFinal;
-    return prepararPagosConAcreditacion(originales.map((p,i)=>{
-      const monto=i===originales.length-1?restante:Math.min(restante,Math.round((p.monto||0)*totalFinal/base*100)/100);
-      restante=Math.round((restante-monto)*100)/100;
-      return {tipo:p.tipo,monto};
-    }).filter(p=>p.monto>0));
-  }
   const tipo = pagoTipoNormalizado(metodo);
+  if(!Object.hasOwn(PAGO_CAJA_MAP,tipo)&&tipo!=="cuenta"){alert("Seleccioná un método de pago.");return null;}
   if (tipo === "cuenta" && !clienteId) {
     alert("Para cuenta corriente seleccioná un cliente.");
     return null;
@@ -544,16 +540,39 @@ function guardarCambiosVenta() {
     return;
   }
 
-  const items = itemsEdicionValidos();
-  if (!items) return;
   const desc=Number(document.getElementById("ev-desc-general").value);
   if(!Number.isFinite(desc)||desc<0||desc>100){alert("El descuento debe estar entre 0 y 100%.");return false;}
-  const cobro = calcularCobroEdicion(items);
   const clienteId = parseInt(document.getElementById("ev-cliente-id").value, 10) || null;
   const clienteNombre = cleanPlainText(document.getElementById("ev-cliente-nombre").value) || "Consumidor final";
-  const fechaISO = document.getElementById("ev-fecha").value || fechaISOFromVenta(ventaOriginal);
+  const fechaOriginal = fechaISOFromVenta(ventaOriginal);
+  const fechaISO = document.getElementById("ev-fecha").value || fechaOriginal;
+  const hora = document.getElementById("ev-hora").value || "00:00";
+  const fechaHora = fechaISO ? {fecha:fechaCortaFromISO(fechaISO),fechaISO,hora} : {hora};
+  const cambioFechaHora = fechaISO !== fechaOriginal || hora !== (ventaOriginal.hora || "00:00");
   const metodo = document.getElementById("ev-metodo-pago").value;
   const pendiente = Boolean(document.getElementById("ev-pendiente")?.checked);
+  const observaciones = cleanPlainText(document.getElementById("ev-obs").value);
+  const conservaCobro = !ventaPendiente(ventaOriginal);
+  const mismoCliente = clienteId === (Number(clienteIdDeVenta(ventaOriginal)) || null);
+
+  syncTodosItemsDesdeDOM();
+  const conservaOperacion = mismoCliente
+    && clienteNombre === (ventaOriginal.cliente || "Consumidor final")
+    && pendiente === ventaPendiente(ventaOriginal)
+    && (pendiente || metodo === metodoParaEditor(ventaOriginal))
+    && desc === (Number(ventaOriginal.descuento_general) || 0)
+    && firmaItems(editVentaItemsTmp) === firmaItems(prepararItemsEdicion(ventaOriginal));
+  if(conservaOperacion && (cambioFechaHora || conservaCobro)){
+    const venta = DB.ventas[ventaIdx];
+    Object.assign(venta, fechaHora, {observaciones});
+    if(cambioFechaHora)actualizarFechaMovimientosVenta(venta, fechaHora);
+    finalizarEdicionVenta(venta);
+    return;
+  }
+
+  const items = itemsEdicionValidos();
+  if (!items) return;
+  const cobro = calcularCobroEdicion(items);
   const pagos = pagosEditados(cobro.total, metodo, clienteId);
   if (!pagos) return;
 
@@ -562,13 +581,13 @@ function guardarCambiosVenta() {
     ...DB.ventas[ventaIdx],
     cliente_id: clienteId,
     cliente: clienteNombre,
-    fecha: fechaCortaFromISO(fechaISO),
-    fechaISO,
-    hora: document.getElementById("ev-hora").value || "00:00",
-    metodo: pendiente ? "Pendiente" : [...new Set(pagos.map(p => pagoLabel(p.tipo)))].join(" + "),
-    metodo_pago: pendiente ? "pendiente" : (pagos.length === 1 ? pagos[0].tipo : "mixto"),
-    pagos,
-    estado: pendiente ? "pendiente" : "pagada",
+    ...fechaHora,
+    ...(!conservaCobro?{
+      metodo: pendiente ? "Pendiente" : pagoLabel(pagos[0].tipo),
+      metodo_pago: pendiente ? "pendiente" : pagos[0].tipo,
+      pagos,
+      estado: pendiente ? "pendiente" : "pagada",
+    }:{}),
     items: describirItemsVenta(cobro.detalles),
     items_detalle: cobro.detalles,
     producto: detallePrincipal.pid || null,
@@ -582,28 +601,43 @@ function guardarCambiosVenta() {
     descuentoConjunto: cobro.descuentoConjunto,
     descuentoConjuntoAplicado: cobro.descuentoConjuntoAplicado,
     detallesConjuntos: cobro.detallesConjuntos,
-    total: cobro.total,
+    total: conservaCobro ? ventaOriginal.total : cobro.total,
     puntos_otorgados: Math.round(cobro.total / 1000),
-    observaciones: cleanPlainText(document.getElementById("ev-obs").value),
-    editada_en: new Date().toISOString(),
-    editada_por: "usuario",
-    historial_cambios: [
-      ...(DB.ventas[ventaIdx].historial_cambios || []),
-      { fecha:new Date().toISOString(), accion:"editada", antes:ventaOriginal, total_anterior:ventaOriginal.total, total_nuevo:cobro.total }
-    ]
+    observaciones,
   };
   if(ventaTieneDevoluciones(DB.ventas[ventaIdx])&&(firmaItems(normalizarItemsVenta(ventaActualizada))!==firmaItems(normalizarItemsVenta(ventaOriginal))||ventaActualizada.total!==ventaOriginal.total||clienteId!==ventaOriginal.cliente_id)){
     alert("Primero anulá las devoluciones asociadas antes de cambiar productos, total o cliente.");return false;
   }
-  const mismosIngresos=JSON.stringify(normalizarPagosVenta(ventaOriginal).map(ingresoCajaPagoVenta))===JSON.stringify(normalizarPagosVenta(ventaActualizada).map(ingresoCajaPagoVenta));
-  if(!mismosIngresos&&!validarReversionCaja(movimientosReversionVenta(DB.ventas[ventaIdx])))return false;
-  const cuentaOriginal=normalizarPagosVenta(ventaOriginal).filter(p=>p.tipo==="cuenta").reduce((a,p)=>a+p.monto-(p.favor_aplicado||0),0);
-  if(!validarCuentaVenta(ventaActualizada,{id:ventaOriginal.cliente_id,cargo:cuentaOriginal}))return false;
+  if(!conservaCobro&&!validarCuentaVenta(ventaActualizada))return false;
 
-  const ventaAnterior = cloneData(DB.ventas[ventaIdx]);
-  revertirEfectosVenta(ventaAnterior,{sinCaja:mismosIngresos});
+  const efectos={sinCaja:conservaCobro,sinCliente:conservaCobro&&mismoCliente};
+  revertirEfectosVenta(ventaOriginal,efectos);
   DB.ventas[ventaIdx] = ventaActualizada;
-  aplicarEfectosVenta(ventaActualizada,{sinCaja:mismosIngresos});
+  aplicarEfectosVenta(ventaActualizada,efectos);
+  if(conservaCobro&&cambioFechaHora)actualizarFechaMovimientosVenta(ventaActualizada, fechaHora);
+  finalizarEdicionVenta(ventaActualizada);
+}
+
+function actualizarFechaMovimientosVenta(venta, fechaHora) {
+  for(const movimiento of movimientosDeVenta(venta)){
+    // La acreditación registra el ingreso del dinero en una fecha propia.
+    if(movimiento.tipo === "venta" && !movimiento.acreditacion_tarjeta)Object.assign(movimiento, fechaHora);
+  }
+  if(fechaHora.fechaISO){
+    const cliente=clienteDeVenta(venta);
+    for(const registro of cliente?.historial || []){
+      if(registro.venta_id===venta.id)Object.assign(registro,{fecha:fechaHora.fecha,fechaISO:fechaHora.fechaISO});
+    }
+  }
+}
+
+function finalizarEdicionVenta(venta) {
+  venta.editada_en = new Date().toISOString();
+  venta.editada_por = "usuario";
+  venta.historial_cambios = [
+    ...(venta.historial_cambios || []),
+    {fecha:venta.editada_en, accion:"editada", antes:ventaOriginal, total_anterior:ventaOriginal.total, total_nuevo:venta.total}
+  ];
   persistDBSoon();
 
   alert(`Venta #${editingVentaId} actualizada correctamente.`);

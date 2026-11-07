@@ -33,7 +33,7 @@ function registrarIngresoPagoVenta(venta,pago,indice){
   if(!ingreso)return;
   const acreditada=esPagoTarjeta(pago)&&pago.acreditacion==="acreditada";
   ajustarSaldoCaja(ingreso.caja,ingreso.medio,ingreso.monto);
-  DB.movimientos.unshift({
+  const movimiento={
     id:nextId(DB.movimientos),
     fecha:acreditada?shortFromISO(pago.fecha_acreditacion):venta.fecha,
     fechaISO:acreditada?pago.fecha_acreditacion:fechaISOFromVenta(venta),
@@ -43,7 +43,9 @@ function registrarIngresoPagoVenta(venta,pago,indice){
     caja:ingreso.caja,medio:ingreso.medio,monto:ingreso.monto,signo:1,
     ...(venta.tipo==="pago_cliente"?{pago_cliente_id:venta.id,cliente_id:venta.cliente_id}:{venta_id:venta.id}),pago_indice:indice,
     ...(acreditada?{bruto:pago.monto,comision:pago.comision,acreditacion_tarjeta:true}:{}),
-  });
+  };
+  DB.movimientos.unshift(movimiento);
+  return movimiento;
 }
 function estadoIngresoVentaHTML(venta){
   if(ingresoPendienteVenta(venta))return `<button class="btn btn-out btn-sm" onclick="abrirIngresoTarjeta(${venta.id},'${venta.tipo==="pago_cliente"?"cliente":"venta"}')" title="Registrar el dinero recibido" style="white-space:normal;font-size:10px;">Ingreso de dinero pendiente · ${fmt(montoIngresoPendienteVenta(venta))}</button>`;

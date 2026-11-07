@@ -124,33 +124,48 @@
 </div>
 </div>
 
+<!-- CORREGIR MEDIO DE PAGO -->
+<div class="ov" id="ov-corregir-medio">
+  <form class="modal" style="max-width:460px;" onsubmit="confirmarCorreccionMedio(event)">
+    <div class="mh"><span class="mt">Corregir medio de pago</span><button type="button" class="btn-ghost" onclick="closeOv('ov-corregir-medio')" aria-label="Cerrar"><i class="ti ti-x"></i></button></div>
+    <div class="mc">
+      <div id="cm-venta" class="notif notif-az"></div>
+      <div class="fg"><label for="cm-pago">Pago a corregir</label><select id="cm-pago" required onchange="seleccionarPagoParaCorregir()"></select></div>
+      <div class="fg"><label for="cm-medio">Medio correcto</label><select id="cm-medio" required></select></div>
+      <div id="cm-info" class="notif notif-am" aria-live="polite"></div>
+    </div>
+    <div class="mf"><button type="button" class="btn btn-out" onclick="closeOv('ov-corregir-medio')">Cancelar</button><button type="submit" class="btn btn-ng">Guardar corrección</button></div>
+  </form>
+</div>
+
 <!-- DEVOLUCIÓN -->
 <div class="ov" id="ov-dev">
 <div class="modal" style="max-width:440px;">
-  <div class="mh"><span class="mt"><i class="ti ti-arrow-back-up" style="margin-right:6px;"></i>Registrar devolución</span><button class="btn-ghost" onclick="closeOv('ov-dev')"><i class="ti ti-x"></i></button></div>
+  <div class="mh"><span class="mt"><i class="ti ti-arrow-back-up" style="margin-right:6px;"></i><span id="dev-titulo">Registrar devolución</span></span><button class="btn-ghost" onclick="closeOv('ov-dev')"><i class="ti ti-x"></i></button></div>
   <div class="mc">
-    <div class="notif notif-az"><i class="ti ti-info-circle"></i>Genera saldo a favor · no devolución de dinero</div>
-    <div class="fg2">
-      <div class="fg"><label>Cliente</label><select id="dev-cliente"><option value="">Consumidor final</option></select></div>
-      <div class="fg"><label for="dev-venta">Venta original #</label><input type="number" min="1" step="1" id="dev-venta" list="dev-ventas" placeholder="Nro. de venta" onchange="onDevVentaChange()"/><datalist id="dev-ventas"></datalist></div>
-    </div>
+    <input type="hidden" id="dev-resolver-id"/>
     <div id="dev-info" class="notif notif-az" style="font-size:12px;"></div>
-    <div class="fg"><label for="dev-prod">Producto devuelto</label><select id="dev-prod" onchange="recalcDevolucion()"></select></div>
-    <div class="fg"><label for="dev-cantidad">Cantidad a devolver</label><input type="number" min="1" step="1" value="1" id="dev-cantidad" oninput="recalcDevolucion()"/></div>
-    <div class="fg2">
+    <div class="fg"><label for="dev-cliente">Cliente</label><select id="dev-cliente"><option value="">Consumidor final</option></select></div>
+    <div id="dev-detalle">
+      <div class="fg"><label for="dev-venta">Venta original #</label><input type="number" min="1" step="1" id="dev-venta" list="dev-ventas" placeholder="Nro. de venta" onchange="onDevVentaChange()"/><datalist id="dev-ventas"></datalist></div>
+      <div class="fg"><label for="dev-prod">Producto devuelto</label><select id="dev-prod" onchange="recalcDevolucion()"></select></div>
+      <div class="fg"><label for="dev-cantidad">Cantidad a devolver</label><input type="number" min="1" step="1" value="1" id="dev-cantidad" oninput="recalcDevolucion()"/></div>
       <div class="fg"><label>Motivo</label><select id="dev-motivo"><option>Talla incorrecta</option><option>Defecto de fábrica</option><option>No gustó</option><option>Otro</option></select></div>
-      <div class="fg"><label for="dev-monto">Saldo a favor ($)</label><input type="number" min="0.01" step="0.01" id="dev-monto" placeholder="$"/></div>
     </div>
-    <div style="background:var(--crd);border-radius:8px;padding:10px 12px;font-size:12px;">
-      <div style="font-weight:500;margin-bottom:5px;">Condiciones de devolución</div>
-      <div style="color:var(--gt);display:flex;flex-direction:column;gap:3px;">
-        <span><i class="ti ti-check" style="color:var(--vd);margin-right:4px;"></i>Misma prenda que la vendida</span>
-        <span><i class="ti ti-check" style="color:var(--vd);margin-right:4px;"></i>Etiqueta presente</span>
-        <span><i class="ti ti-check" style="color:var(--vd);margin-right:4px;"></i>Buen estado general</span>
+    <div class="fg2">
+      <div class="fg"><label for="dev-monto">Importe a devolver ($)</label><input type="number" min="0" step="0.01" id="dev-monto" placeholder="$"/></div>
+      <div class="fg"><label for="dev-resolucion">Qué pasó con el dinero</label><select id="dev-resolucion" onchange="actualizarCamposReintegro()"><option value="">Elegí una opción</option><option value="reintegro">Dinero reintegrado</option><option value="favor">Saldo a favor</option><option value="pendiente">Pendiente de reintegro</option></select></div>
+    </div>
+    <div id="dev-reintegro" style="display:none;">
+      <div class="fg2">
+        <div class="fg"><label for="dev-caja">Caja del reintegro</label><select id="dev-caja"><option value="principal">Principal</option><option value="reinversion">Reinversión</option></select></div>
+        <div class="fg"><label for="dev-medio">Medio del reintegro</label><select id="dev-medio"><option value="">Elegí el medio</option><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago / transferencia</option><option value="debito">Débito</option><option value="credito">Crédito</option></select></div>
       </div>
+      <div class="fg"><label for="dev-fecha-reintegro">Fecha del reintegro</label><input type="date" id="dev-fecha-reintegro"/></div>
+      <div class="notif notif-am" style="font-size:12px;">Elegí esta opción si ya devolviste el dinero. Se registrará un egreso en Caja.</div>
     </div>
   </div>
-  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-dev')">Cancelar</button><button class="btn btn-ng" onclick="procesarDevolucion()"><i class="ti ti-check"></i>Confirmar devolución</button></div>
+  <div class="mf"><button class="btn btn-out" onclick="closeOv('ov-dev')">Cancelar</button><button class="btn btn-ng" onclick="procesarDevolucion()"><i class="ti ti-check"></i>Confirmar</button></div>
 </div>
 </div>
 
@@ -507,13 +522,14 @@ function syncTallesStrip() {
 <script src="config.js"></script>
 <script src="data/local-demo.js"></script>
 <script src="data/import-summary.js"></script>
-<script src="app.js?v=20261007-listados-3"></script>
-<script src="integridad.js"></script>
-<script src="persistencia.js"></script>
-<script src="acreditaciones.js"></script>
-<script src="pagos-clientes.js?v=20261007-listados-3"></script>
+<script src="app.js?v=20261107-medio-pago"></script>
+<script src="integridad.js?v=20261107-devoluciones"></script>
+<script src="persistencia.js?v=20261107-devoluciones"></script>
+<script src="acreditaciones.js?v=20261107-medio-pago"></script>
+<script src="corregir-medio-pago.js"></script>
+<script src="pagos-clientes.js?v=20261107-medio-pago"></script>
 <script src="descuentos-conjuntos.js"></script>
-<script src="editar-venta.js"></script>
+<script src="editar-venta.js?v=20261107-devoluciones"></script>
 <script src="dashboard.js"></script>
 <script src="experiencia.js?v=20261007-listados-3"></script>
 </body>
